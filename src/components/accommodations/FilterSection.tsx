@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
@@ -8,13 +7,15 @@ interface FilterSectionProps {
   setCurrentTab: (tab: string) => void;
   priceRange: number[];
   setPriceRange: (range: number[]) => void;
+  subcategories?: any[];
 }
 
 const FilterSection: React.FC<FilterSectionProps> = ({ 
   currentTab, 
   setCurrentTab, 
   priceRange, 
-  setPriceRange 
+  setPriceRange,
+  subcategories = []
 }) => {
   return (
     <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -25,10 +26,24 @@ const FilterSection: React.FC<FilterSectionProps> = ({
           onValueChange={setCurrentTab}
           className="w-full"
         >
-          <TabsList className="w-full grid grid-cols-3 h-auto">
+          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto">
             <TabsTrigger value="all">All Types</TabsTrigger>
-            <TabsTrigger value="beach-resort">Beach Resorts</TabsTrigger>
-            <TabsTrigger value="mountain-resort">Mountain Resorts</TabsTrigger>
+            {subcategories && subcategories.length > 0 ? (
+              subcategories.map((item) => (
+                <TabsTrigger
+                  key={item.id}
+                  value={`${item.id}`}
+                  className="px-3 py-2 text-sm font-medium rounded-md"
+                >
+                  {item.name}
+                </TabsTrigger>
+              ))
+            ) : (
+              <>
+                <TabsTrigger value="beach-resort">Beach Resorts</TabsTrigger>
+                <TabsTrigger value="mountain-resort">Mountain Resorts</TabsTrigger>
+              </>
+            )}
           </TabsList>
         </Tabs>
       </div>

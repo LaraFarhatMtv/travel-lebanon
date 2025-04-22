@@ -5,6 +5,13 @@
 
 // Base URL for API calls - would point to your actual API in production
 const API_BASE_URL = 'http://localhost:8055';
+const ASSETS_URL = `${API_BASE_URL}/assets/`;
+
+// Utility function to format image URLs
+const formatImageUrl = (assetId) => {
+  if (!assetId) return null;
+  return `${ASSETS_URL}${assetId}`;
+};
 
 // Authentication API calls
 export const authAPI = {
@@ -204,10 +211,12 @@ export const directusAPI = {
     }
   },
 
-  getItems: async (subcategoryId = null, categoryId = null) => {
+  getItems: async (subcategoryId = null, categoryId = null, itemId = null) => {
     let url = `${API_BASE_URL}/items/Items?fields=*,subCategoryId.*,subCategoryId.categoryId.*`;
 
-    if (subcategoryId) {
+    if (itemId) {
+      url += `&filter[id][_eq]=${itemId}`;
+    } else if (subcategoryId) {
       url += `&filter[subCategoryId][_eq]=${subcategoryId}`;
     } else if (categoryId) {
       url += `&filter[subCategoryId.categoryId][_eq]=${categoryId}`;
@@ -226,7 +235,17 @@ export const directusAPI = {
       throw new Error('Failed to fetch items');
     }
 
-    return await response.json();
+    const data = await response.json();
+    
+    // Process image URLs in the response data
+    if (data.data && Array.isArray(data.data)) {
+      data.data = data.data.map(item => ({
+        ...item,
+        image: formatImageUrl(item.image)
+      }));
+    }
+
+    return data;
   }
 };
 // Booking API calls

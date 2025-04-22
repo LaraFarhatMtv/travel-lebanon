@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MapPin, Search, Phone, Clock, Utensils, Star } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { directusAPI } from '@/services/api';
 
 // const restaurants = [
@@ -88,6 +87,7 @@ import { directusAPI } from '@/services/api';
 const Restaurants = () => {
 
   const location = useLocation();
+  const navigate = useNavigate();
   const searchParams = new URLSearchParams(location.search);
   const id = searchParams.get('id');
   const subcategoryId = searchParams.get('subcategoryId');
@@ -127,15 +127,41 @@ const Restaurants = () => {
     getItems();
   }, [id, subcategoryId]);
 
-  const filteredRestaurants = restaurants.filter(restaurant => {
-    const matchesSearch = restaurant.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      restaurant.cuisine.toLowerCase().includes(searchTerm.toLowerCase());
-      //  ||
-      // restaurant.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Sync currentTab with subcategoryId from URL when component mounts or URL changes
+  useEffect(() => {
+    if (subcategoryId) {
+      setCurrentTab(subcategoryId);
+    } else {
+      setCurrentTab("all");
+    }
+  }, [subcategoryId]);
 
-    if (currentTab === "all") return matchesSearch;
-    return matchesSearch && restaurant.cuisine.toLowerCase().includes(currentTab.toLowerCase());
+  // Only filter by search term since subcategory filtering is done server-side
+  const filteredRestaurants = restaurants.filter(restaurant => {
+    return (
+      (restaurant.title?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (restaurant.cuisine?.toLowerCase?.() || '').includes(searchTerm.toLowerCase()) ||
+      (restaurant.subCategoryId?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+    );
   });
+
+  const handleTabChange = (value) => {
+    setCurrentTab(value);
+    
+    // Create new search params based on current ones
+    const newSearchParams = new URLSearchParams(location.search);
+    
+    if (value === "all") {
+      // Remove subcategoryId if "all" is selected
+      newSearchParams.delete('subcategoryId');
+    } else {
+      // Set subcategoryId parameter
+      newSearchParams.set('subcategoryId', value);
+    }
+    
+    // Navigate to the new URL with updated search params
+    navigate(`${location.pathname}?${newSearchParams.toString()}`);
+  };
 
   return (
     <div className="container mx-auto px-4 py-12">
@@ -166,7 +192,7 @@ const Restaurants = () => {
         <Tabs
           defaultValue="all"
           value={currentTab}
-          onValueChange={setCurrentTab}
+          onValueChange={handleTabChange}
           className="w-full"
         >
           <TabsList className="w-full max-w-3xl mx-auto grid grid-cols-3 md:grid-cols-6 h-auto">
@@ -196,7 +222,7 @@ const Restaurants = () => {
             <Card key={restaurant.id} className="overflow-hidden">
               <div className="h-48 overflow-hidden">
                 <img
-                  src={restaurant.image}
+                  src={restaurant.image || "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?q=80&w=2070&auto=format&fit=crop"}
                   alt={restaurant.title}
                   className="w-full h-full object-cover transition-transform hover:scale-105 duration-500"
                 />
@@ -206,35 +232,40 @@ const Restaurants = () => {
                   <CardTitle className="text-xl">{restaurant.title}</CardTitle>
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                    {restaurant.rating}
+                    {restaurant.rating || 4.5}
                   </Badge>
                 </div>
                 <CardDescription className="flex items-center gap-1 text-gray-600">
                   <Utensils className="h-3.5 w-3.5" />
-                  {restaurant.cuisine} • {restaurant.priceRange}
+                  {restaurant.subCategoryId?.name || restaurant.cuisine || "Lebanese"} • {restaurant.priceRange || "$$$"}
                 </CardDescription>
               </CardHeader>
               <CardContent className="pb-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex items-start gap-2">
                     <MapPin className="h-4 w-4 text-gray-500 mt-0.5" />
-                    <span>{restaurant.address}</span>
+                    <span>{restaurant.location || restaurant.address || "Lebanon"}</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <Phone className="h-4 w-4 text-gray-500 mt-0.5" />
-                    <span>{restaurant.phone}</span>
+                    <span>{restaurant.phoneNumber || restaurant.phone || "+961 1 234 567"}</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <Clock className="h-4 w-4 text-gray-500 mt-0.5" />
-                    <span>{restaurant.openHours}</span>
+                    <span>{restaurant.openHours || "9:00 AM - 10:00 PM"}</span>
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {/* {restaurant.tags.map((tag, index) => (
+                  {restaurant.tags && Array.isArray(restaurant.tags) && restaurant.tags.map((tag, index) => (
                     <Badge key={index} variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-200">
                       {tag}
                     </Badge>
-                  ))} */}
+                  ))}
+                  {(!restaurant.tags || !Array.isArray(restaurant.tags) || restaurant.tags.length === 0) && (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-200">
+                      {restaurant.subCategoryId?.name || "Lebanese Cuisine"}
+                    </Badge>
+                  )}
                 </div>
               </CardContent>
               <CardFooter>
@@ -248,7 +279,14 @@ const Restaurants = () => {
           <Utensils className="h-12 w-12 text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-700 mb-2">No restaurants found</h3>
           <p className="text-gray-500 mb-6">Try adjusting your filters or search term</p>
-          <Button onClick={() => { setSearchTerm(""); setCurrentTab("all"); }}>
+          <Button onClick={() => { 
+            setSearchTerm(""); 
+            setCurrentTab("all"); 
+            // Remove subcategoryId from URL when clearing filters
+            const newSearchParams = new URLSearchParams(location.search);
+            newSearchParams.delete('subcategoryId');
+            navigate(`${location.pathname}?${newSearchParams.toString()}`);
+          }}>
             Clear filters
           </Button>
         </div>
