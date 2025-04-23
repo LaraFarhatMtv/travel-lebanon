@@ -218,8 +218,6 @@ export const directusAPI = {
       url += `&filter[id][_eq]=${itemId}`;
     } else if (subcategoryId) {
       url += `&filter[subCategoryId][_eq]=${subcategoryId}`;
-    } else if (categoryId) {
-      url += `&filter[subCategoryId.categoryId][_eq]=${categoryId}`;
     }
 
     const response = await fetch(url, {
