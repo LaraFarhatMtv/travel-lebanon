@@ -1,414 +1,413 @@
+import type { BookingStatus } from "@/types/directus";
+
 /**
- * API Service for backend communication
- * This service provides methods for authentication, data fetching, and other backend operations
+ * API Service for backend communication.
+ * Handles Directus authentication, content fetching, bookings and reviews.
  */
 
-// Base URL for API calls - would point to your actual API in production
-const API_BASE_URL = 'http://localhost:8055';
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+const API_BASE_URL =
+  (import.meta as any).env?.VITE_DIRECTUS_URL ?? "http://localhost:8055";
 const ASSETS_URL = `${API_BASE_URL}/assets/`;
 
-// Utility function to format image URLs
-const formatImageUrl = (assetId) => {
-  if (!assetId) return null;
-  return `${ASSETS_URL}${assetId}`;
+const getToken = () => localStorage.getItem("authToken");
+
+const buildUrl = (path: string, searchParams?: Record<string, any>) => {
+  const url = new URL(`${API_BASE_URL}${path}`);
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return;
+
+      if (Array.isArray(value)) {
+        value.forEach((entry) => url.searchParams.append(key, String(entry)));
+      } else {
+        url.searchParams.append(key, String(value));
+      }
+    });
+  }
+  return url.toString();
 };
+
+interface DirectusFetchOptions {
+  method?: HttpMethod;
+  body?: any;
+  auth?: boolean;
+  headers?: Record<string, string>;
+  searchParams?: Record<string, any>;
+}
+
+const directusFetch = async (
+  path: string,
+  {
+    method = "GET",
+    body,
+    auth = false,
+    headers = {},
+    searchParams,
+  }: DirectusFetchOptions = {}
+) => {
+  const token = getToken();
+  const isFormData = body instanceof FormData;
+
+  const finalHeaders: Record<string, string> = {
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...headers,
+  };
+
+  if (auth && token) {
+    finalHeaders.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(buildUrl(path, searchParams), {
+    method,
+    headers: finalHeaders,
+    body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
+  });
+
+  const isJson = response.headers
+    .get("content-type")
+    ?.includes("application/json");
+  const payload = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const message =
+      (payload as any)?.errors?.[0]?.message ||
+      (payload as any)?.message ||
+      response.statusText ||
+      "Request failed";
+    throw new Error(message);
+  }
+
+  return payload;
+};
+
+const formatImageUrl = (asset: any) => {
+  if (!asset) return null;
+  if (typeof asset === "string") return `${ASSETS_URL}${asset}`;
+  if (typeof asset === "object" && asset.id) return `${ASSETS_URL}${asset.id}`;
+  return asset;
+};
+
+const cleanPayload = (data: Record<string, any>) =>
+  Object.fromEntries(
+    Object.entries(data).filter(
+      ([, value]) => value !== undefined && value !== null
+    )
+  );
 
 // Authentication API calls
 export const authAPI = {
-  // Login user
-  login: async (email: string, password: string) => {
-    try {
-      // In a real implementation, this would be a fetch call to your authentication endpoint
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
+  login: async (email: string, password: string) =>
+    directusFetch("/auth/login", {
+      method: "POST",
+      body: { email, password },
+    }),
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
-  },
-
-  // Register user
-  register: async (userData: any) => {
-    try {
-      var dataToSend = {
+  register: async (userData: any) =>
+    directusFetch("/users", {
+      method: "POST",
+      body: {
         email: userData?.email,
         password: userData?.password,
         role: "c672a94c-5121-49d2-af2a-82e91075206a",
         first_name: userData?.firstName,
         last_name: userData?.lastName,
-      }
-      // In a real implementation, this would be a fetch call to your registration endpoint
-      const response = await fetch(`${API_BASE_URL}/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(dataToSend),
-      });
+      },
+    }),
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
-      }
-      return response; 
-     
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
-    }
-  },
+  logout: async () =>
+    directusFetch("/auth/logout", {
+      method: "POST",
+      auth: true,
+    }),
 
-  // Logout user
-  logout: async () => {
-    try {
-      // In a real implementation, this would be a fetch call to your logout endpoint
-      const response = await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Logout failed');
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Logout error:', error);
-      throw error;
-    }
-  },
+  getCurrentUser: async () =>
+    directusFetch("/users/me", {
+      auth: true,
+      searchParams: {
+        fields: "id,email,first_name,last_name,role.name",
+      },
+    }),
 };
 
-// User profile API calls
 export const userAPI = {
-  // Get user profile
-  getProfile: async () => {
-    try {
-      // In a real implementation, this would fetch the user's profile
-      const response = await fetch(`${API_BASE_URL}/users/profile`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // Include authentication token from storage
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
+  getProfile: async () =>
+    directusFetch("/users/me", {
+      auth: true,
+      searchParams: {
+        fields:
+          "id,email,first_name,last_name,location,phone,avatar,role.name,created_at",
+      },
+    }),
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get profile error:', error);
-      throw error;
-    }
-  },
-
-  // Update user profile
-  updateProfile: async (profileData: any) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Update profile error:', error);
-      throw error;
-    }
-  },
+  updateProfile: async (profileData: any) =>
+    directusFetch("/users/me", {
+      method: "PATCH",
+      auth: true,
+      body: profileData,
+    }),
 };
+
 export const directusAPI = {
-  // Get user profile
-  getCategories: async () => {
-    try {
-      // In a real implementation, this would fetch the user's profile
-      const response = await fetch(`${API_BASE_URL}/items/Category?fields=id,title`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // Include authentication token from storage
-          // 'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
+  getCategories: async () =>
+    directusFetch("/items/Category", {
+      searchParams: { fields: "id,title", sort: "sort" },
+    }),
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
+  getsubCategories: async (id: number | string) =>
+    directusFetch("/items/SubCategory", {
+      searchParams: {
+        "filter[categoryId][_eq]": id,
+        fields: "*,categoryId.*",
+        sort: "name",
+      },
+    }),
 
-      return await response.json();
-    } catch (error) {
-      console.error('Get profile error:', error);
-      throw error;
-    }
-  },
-
-  getsubCategories: async (id) => {
-    try {
-      // In a real implementation, this would fetch the user's profile
-      const response = await fetch(`${API_BASE_URL}/items/SubCategory?filter[categoryId][_eq]=${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // 'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get profile error:', error);
-      throw error;
-    }
-  },
-
-  // Update user profile
-  updateProfile: async (profileData: any) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/users/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Update profile error:', error);
-      throw error;
-    }
-  },
-
-  getItems: async (subcategoryId = null, categoryId = null, itemId = null) => {
-    let url = `${API_BASE_URL}/items/Items?fields=*,subCategoryId.*,subCategoryId.categoryId.*`;
+  getItems: async (
+    subcategoryId: number | null = null,
+    _categoryId: number | null = null,
+    itemId: number | string | null = null
+  ) => {
+    const searchParams: Record<string, any> = {
+      fields: "*,subCategoryId.*,subCategoryId.categoryId.*",
+      sort: "-created_at",
+    };
 
     if (itemId) {
-      url += `&filter[id][_eq]=${itemId}`;
+      searchParams["filter[id][_eq]"] = itemId;
     } else if (subcategoryId) {
-      url += `&filter[subCategoryId][_eq]=${subcategoryId}`;
+      searchParams["filter[subCategoryId][_eq]"] = subcategoryId;
     }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const data = await directusFetch("/items/Items", { searchParams });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Directus error response:', error);
-      throw new Error('Failed to fetch items');
-    }
-
-    const data = await response.json();
-    
-    // Process image URLs in the response data
-    if (data.data && Array.isArray(data.data)) {
-      data.data = data.data.map(item => ({
+    if (data?.data && Array.isArray(data.data)) {
+      data.data = data.data.map((item: any) => ({
         ...item,
-        image: formatImageUrl(item.image)
+        image: formatImageUrl(item.image),
       }));
     }
 
     return data;
-  }
+  },
+
+  getActivityById: async (itemId: string | number) => {
+    const response = await directusAPI.getItems(null, null, itemId);
+    return response?.data?.[0] ?? null;
+  },
+
+  getTopActivities: async (limit = 6) => {
+    const [itemsResponse, reviewsResponse] = await Promise.all([
+      directusFetch("/items/Items", {
+        searchParams: {
+          fields: "*,subCategoryId.*,subCategoryId.categoryId.*",
+          limit: -1,
+        },
+      }),
+      directusFetch("/items/Review", {
+        searchParams: {
+          fields: "id,rating,itemId.id",
+          limit: -1,
+        },
+      }).catch(() => ({ data: [] })),
+    ]);
+
+    const items = itemsResponse?.data || [];
+    const reviews = reviewsResponse?.data || [];
+
+    const itemsWithRatings = items.map((item: any) => {
+      const itemReviews = reviews.filter((review: any) => {
+        const reviewItemId =
+          typeof review.itemId === "object" ? review.itemId?.id : review.itemId;
+        return reviewItemId === item.id;
+      });
+
+      const average =
+        itemReviews.length > 0
+          ? itemReviews.reduce(
+              (sum: number, r: any) => sum + (r.rating || 0),
+              0
+            ) / itemReviews.length
+          : 0;
+
+      return {
+        ...item,
+        image: formatImageUrl(item.image),
+        rating: parseFloat(average.toFixed(2)),
+        reviewCount: itemReviews.length,
+      };
+    });
+
+    const sorted = itemsWithRatings
+      .sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, limit);
+
+    return { data: sorted, total: itemsWithRatings.length };
+  },
+
+  getDrivers: async () => {
+    try {
+      const [driversResponse, reviewsResponse] = await Promise.all([
+        directusFetch("/items/Drivers", {
+          searchParams: {
+            fields:
+              "*,image.id,image.filename_download,languages,specialties,driver_reviews.id",
+            sort: "name",
+          },
+        }),
+        directusFetch("/items/DriverReviews", {
+          searchParams: {
+            fields:
+              "id,rating,comment,driver.id,created_at,user.first_name,user.last_name",
+            limit: -1,
+          },
+        }).catch(() => ({ data: [] })),
+      ]);
+
+      const drivers = driversResponse?.data || [];
+      const reviews = reviewsResponse?.data || [];
+
+      const groupedReviews = reviews.reduce((acc: any, review: any) => {
+        const driverId =
+          typeof review.driver === "object" ? review.driver?.id : review.driver;
+        if (!driverId) return acc;
+        acc[driverId] = acc[driverId] || [];
+        acc[driverId].push(review);
+        return acc;
+      }, {});
+
+      return drivers.map((driver: any) => {
+        const driverReviews = groupedReviews[driver.id] || [];
+        const average =
+          driverReviews.length > 0
+            ? driverReviews.reduce(
+                (sum: number, r: any) => sum + (r.rating || 0),
+                0
+              ) / driverReviews.length
+            : null;
+
+        return {
+          ...driver,
+          image: formatImageUrl(driver.image),
+          rating: average ? parseFloat(average.toFixed(2)) : null,
+          reviewCount: driverReviews.length,
+          reviews: driverReviews,
+        };
+      });
+    } catch (error) {
+      console.error("Get drivers error:", error);
+      return [];
+    }
+  },
 };
+
 // Booking API calls
 export const bookingAPI = {
-  // Create a new booking
-  createBooking: async (bookingData: any) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/bookings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify(bookingData),
-      });
+  createBooking: async (bookingData: any) =>
+    directusFetch("/items/Bookings", {
+      method: "POST",
+      auth: true,
+      body: cleanPayload(bookingData),
+    }),
 
-      if (!response.ok) {
-        throw new Error('Failed to create booking');
-      }
+  getUserBookings: async (userId: string) =>
+    directusFetch("/items/Bookings", {
+      auth: true,
+      searchParams: {
+        "filter[user][id][_eq]": userId,
+        fields:
+          "*,item.*,driver.*,user.id,destinations,status,type,start_date,participants",
+        sort: "-start_date",
+      },
+    }),
 
-      return await response.json();
-    } catch (error) {
-      console.error('Create booking error:', error);
-      throw error;
-    }
-  },
+  cancelBooking: async (bookingId: string) =>
+    directusFetch(`/items/Bookings/${bookingId}`, {
+      method: "PATCH",
+      auth: true,
+      body: { status: "cancelled" },
+    }),
 
-  // Get user bookings
-  getUserBookings: async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/bookings/user`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch bookings');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get bookings error:', error);
-      throw error;
-    }
-  },
-
-  // Cancel booking
-  cancelBooking: async (bookingId: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to cancel booking');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Cancel booking error:', error);
-      throw error;
-    }
-  },
+  updateBookingStatus: async (bookingId: string, status: BookingStatus) =>
+    directusFetch(`/items/Bookings/${bookingId}`, {
+      method: "PATCH",
+      auth: true,
+      body: { status },
+    }),
 };
 
-// Payment API calls
+// Payment API calls (placeholders for future integration)
 export const paymentAPI = {
-  // Process payment
-  processPayment: async (paymentData: any) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/payments/process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify(paymentData),
-      });
+  processPayment: async (paymentData: any) =>
+    directusFetch("/payments/process", {
+      method: "POST",
+      auth: true,
+      body: paymentData,
+    }),
 
-      if (!response.ok) {
-        throw new Error('Payment processing failed');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Payment error:', error);
-      throw error;
-    }
-  },
-
-  // Get payment history
-  getPaymentHistory: async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/payments/history`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch payment history');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Get payment history error:', error);
-      throw error;
-    }
-  },
+  getPaymentHistory: async () =>
+    directusFetch("/payments/history", {
+      auth: true,
+    }),
 };
 
-// Review API calls
 export const reviewAPI = {
-  // Submit a review
-  submitReview: async (reviewData: any) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/reviews`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify(reviewData),
-      });
+  submitActivityReview: async (reviewData: any) =>
+    directusFetch("/items/Review", {
+      method: "POST",
+      auth: true,
+      body: cleanPayload(reviewData),
+    }),
 
-      if (!response.ok) {
-        throw new Error('Failed to submit review');
-      }
+  getActivityReviews: async (activityId: string | number) =>
+    directusFetch("/items/Review", {
+      searchParams: {
+        "filter[itemId][_eq]": activityId,
+        fields:
+          "id,rating,comment,created_at,user.id,user.first_name,user.last_name,booking.id",
+        sort: "-created_at",
+        limit: -1,
+      },
+    }),
 
-      return await response.json();
-    } catch (error) {
-      console.error('Submit review error:', error);
-      throw error;
-    }
-  },
+  getUserActivityReviews: async (userId: string) =>
+    directusFetch("/items/Review", {
+      auth: true,
+      searchParams: {
+        "filter[user][_eq]": userId,
+        fields: "id,itemId.id,rating,comment,booking.id",
+        limit: -1,
+      },
+    }),
 
-  // Get reviews for an activity
-  getActivityReviews: async (activityId: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/activities/${activityId}/reviews`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+  submitDriverReview: async (reviewData: any) =>
+    directusFetch("/items/DriverReviews", {
+      method: "POST",
+      auth: true,
+      body: cleanPayload(reviewData),
+    }),
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch reviews');
-      }
+  getDriverReviews: async (driverId: string | number) =>
+    directusFetch("/items/DriverReviews", {
+      searchParams: {
+        "filter[driver][_eq]": driverId,
+        fields:
+          "id,rating,comment,created_at,user.id,user.first_name,user.last_name,booking.id",
+        sort: "-created_at",
+        limit: -1,
+      },
+    }),
 
-      return await response.json();
-    } catch (error) {
-      console.error('Get reviews error:', error);
-      throw error;
-    }
-  },
+  getUserDriverReviews: async (userId: string) =>
+    directusFetch("/items/DriverReviews", {
+      auth: true,
+      searchParams: {
+        "filter[user][_eq]": userId,
+        fields: "id,driver.id,driver.name,rating,comment,booking.id",
+        limit: -1,
+      },
+    }),
 };
 
 export default {
@@ -417,4 +416,5 @@ export default {
   booking: bookingAPI,
   payment: paymentAPI,
   review: reviewAPI,
+  directus: directusAPI,
 };

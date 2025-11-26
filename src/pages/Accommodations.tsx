@@ -5,9 +5,24 @@ import FilterSection from '@/components/accommodations/FilterSection';
 import AccommodationCard from '@/components/accommodations/AccommodationCard';
 import EmptyState from '@/components/accommodations/EmptyState';
 import { directusAPI } from '@/services/api';
+import { accommodations as STATIC_ACCOMMODATIONS } from '@/data/accommodations';
 
-// Commented out static data import
-// import { accommodations } from '@/data/accommodations';
+const DEFAULT_ACCOMMODATION_SUBCATEGORIES = [
+  { id: "beach-resort", name: "Beach Resorts" },
+  { id: "mountain-resort", name: "Mountain Retreats" },
+  { id: "rural-retreat", name: "Countryside Stays" },
+];
+
+const getSubcategoryIdValue = (record: any) => {
+  if (!record?.subCategoryId && record?.type) {
+    return record.type;
+  }
+  if (!record?.subCategoryId) return null;
+  if (typeof record.subCategoryId === "object") {
+    return record.subCategoryId.id ?? null;
+  }
+  return record.subCategoryId;
+};
 
 const Accommodations = () => {
   const location = useLocation();
@@ -19,19 +34,31 @@ const Accommodations = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentTab, setCurrentTab] = useState("all");
   const [priceRange, setPriceRange] = useState([0, 300]);
-  const [data, setData] = useState([]);
-  const [accommodations, setAccommodations] = useState([]);
+  const [data, setData] = useState<any[]>([]);
+  const [accommodations, setAccommodations] = useState<any[]>([]);
+  const [useStaticData, setUseStaticData] = useState(!id);
   
   useEffect(() => {
     const getSubcategories = async () => {
+      if (!id) {
+        setUseStaticData(true);
+        setData(DEFAULT_ACCOMMODATION_SUBCATEGORIES);
+        return;
+      }
       try {
         const response = await directusAPI.getsubCategories(id);
-        if (response) {
+        if (response?.data?.length) {
           console.log(response.data);
+          setUseStaticData(false);
           setData(response.data);
+        } else {
+          setUseStaticData(true);
+          setData(DEFAULT_ACCOMMODATION_SUBCATEGORIES);
         }
       } catch (e) {
         console.log("error fetch subCategories", e);
+        setUseStaticData(true);
+        setData(DEFAULT_ACCOMMODATION_SUBCATEGORIES);
       }
     };
     getSubcategories();
@@ -39,14 +66,16 @@ const Accommodations = () => {
 
   useEffect(() => {
     const getItems = async () => {
+      if (useStaticData || !id) {
+        setAccommodations(STATIC_ACCOMMODATIONS);
+        return;
+      }
       try {
-        // Only make the API call if subcategoryId is specified
         if (subcategoryId) {
           const response = await directusAPI.getItems(Number(subcategoryId), null);
           console.log("items for specific subcategory:", response.data);
-          setAccommodations(response.data);
+          setAccommodations(response?.data?.length ? response.data : STATIC_ACCOMMODATIONS);
         } else if (currentTab === "all" && data.length > 0) {
-          // For "all" tab with existing subcategories data, fetch from all subcategories
           const fetchPromises = data.map(subcategory => 
             directusAPI.getItems(subcategory.id, null)
               .then(response => response.data || [])
@@ -60,7 +89,7 @@ const Accommodations = () => {
             .then(resultsArray => {
               const allItems = resultsArray.flat();
               const uniqueItems = Object.values(
-                allItems.reduce((acc, item) => {
+                allItems.reduce((acc: Record<string, any>, item: any) => {
                   if (!acc[item.id]) {
                     acc[item.id] = item;
                   }
@@ -69,20 +98,19 @@ const Accommodations = () => {
               );
               
               console.log(`Fetched ${uniqueItems.length} items from all subcategories`);
-              setAccommodations(uniqueItems);
+              setAccommodations(uniqueItems.length ? uniqueItems : STATIC_ACCOMMODATIONS);
             });
         } else {
-          // First load without any subcategory selected - don't make the problematic call
-          // Just leave the accommodations array empty until user selects a subcategory
-          console.log("Waiting for subcategory selection before loading items");
           setAccommodations([]);
         }
       } catch (error) {
         console.error("Error fetching items:", error);
+        setUseStaticData(true);
+        setAccommodations(STATIC_ACCOMMODATIONS);
       }
     };
     getItems();
-  }, [id, subcategoryId, currentTab, data]);
+  }, [id, subcategoryId, currentTab, data, useStaticData]);
 
   // Sync currentTab with subcategoryId from URL when component mounts or URL changes
   useEffect(() => {
@@ -158,16 +186,21 @@ const Accommodations = () => {
   
   // Only filter by search term and price range since subcategory filtering is done server-side
   const filteredAccommodations = accommodations.filter(accommodation => {
+    const matchesTab =
+      currentTab === "all" ||
+      String(getSubcategoryIdValue(accommodation) ?? "") === currentTab;
+
     const matchesSearch = 
-      (accommodation.title?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (accommodation.title?.toLowerCase() || accommodation.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (accommodation.location?.toLowerCase?.() || '').includes(searchTerm.toLowerCase()) ||
       (accommodation.subCategoryId?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     
-    const matchesPrice = 
-      (accommodation.price >= priceRange[0] && accommodation.price <= priceRange[1]) || 
-      (!accommodation.price); // Include items without price
+    const nightlyPrice = accommodation.price ?? accommodation.pricePerNight ?? 0;
+    const matchesPrice = nightlyPrice
+      ? nightlyPrice >= priceRange[0] && nightlyPrice <= priceRange[1]
+      : true;
     
-    return matchesSearch && matchesPrice;
+    return matchesTab && matchesSearch && matchesPrice;
   });
 
   const resetFilters = () => {
@@ -181,6 +214,11 @@ const Accommodations = () => {
     navigate(`${location.pathname}?${newSearchParams.toString()}`);
     
     // Fetch from all subcategories
+    if (useStaticData || !id) {
+      setAccommodations(STATIC_ACCOMMODATIONS);
+      return;
+    }
+
     if (data && data.length > 0) {
       const fetchPromises = data.map(subcategory => 
         directusAPI.getItems(subcategory.id)
@@ -233,6 +271,10 @@ const Accommodations = () => {
             <AccommodationCard 
               key={accommodation.id} 
               accommodation={accommodation} 
+              linkState={{
+                accommodation,
+                source: useStaticData ? "static" : "directus",
+              }}
             />
           ))}
         </div>

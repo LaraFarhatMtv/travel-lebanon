@@ -26,9 +26,10 @@ export interface Accommodation {
 
 interface AccommodationCardProps {
   accommodation: Accommodation;
+  linkState?: Record<string, any>;
 }
 
-const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodation }) => {
+const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodation, linkState }) => {
   const getAmenityIcon = (amenity: string) => {
     switch (amenity.toLowerCase()) {
       case 'wifi':
@@ -103,7 +104,12 @@ const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodation }) 
       </CardContent>
       <CardFooter>
         <Button asChild className="w-full bg-blue-600 hover:bg-blue-700">
-          <Link to={`/accommodations/${accommodation.id}`}>View Details</Link>
+          <Link
+            to={`/accommodations/${accommodation.id}`}
+            state={linkState}
+          >
+            View Details
+          </Link>
         </Button>
       </CardFooter>
     </Card>

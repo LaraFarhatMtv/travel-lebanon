@@ -60,6 +60,13 @@ This project is built with .
 - shadcn-ui
 - Tailwind CSS
 
+## Directus backend
+
+Bookings, driver directories, profiles, and reviews are stored inside a Directus
+instance (default URL `http://localhost:8055`). Set `VITE_DIRECTUS_URL` if your
+instance runs elsewhere and follow the collection/field checklist in
+`docs/directus-setup.md` to add drivers, capture bookings, and moderate reviews.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/756043aa-49a8-42d6-b639-26f9c2da3c80) and click on Share -> Publish.

@@ -1,22 +1,28 @@
-
-import React, { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import React, { useState } from "react";
+import { Link, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, LockKeyhole, Mail, User, Loader2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { MapPin, LockKeyhole, Mail, User, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const SignUp = () => {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const { register, loading, isAuthenticated } = useAuth();
-  
+
   // If already authenticated, redirect to homepage
   if (isAuthenticated) {
     return <Navigate to="/" />;
@@ -27,28 +33,28 @@ const SignUp = () => {
       setPasswordError("Passwords don't match");
       return false;
     }
-    
+
     if (password.length < 8) {
       setPasswordError("Password must be at least 8 characters");
       return false;
     }
-    
-    setPasswordError('');
+
+    setPasswordError("");
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
-    
+
     const userData = {
       firstName,
       lastName,
       email,
       password,
     };
-    
+
     await register(userData);
   };
 
@@ -59,7 +65,9 @@ const SignUp = () => {
           <div className="flex justify-center mb-4">
             <MapPin className="h-10 w-10 text-amber-600" />
           </div>
-          <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            Create an account
+          </CardTitle>
           <CardDescription>
             Sign up to start exploring Lebanon's attractions and activities
           </CardDescription>
@@ -71,11 +79,11 @@ const SignUp = () => {
                 <Label htmlFor="firstName">First Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                  <Input 
-                    id="firstName" 
-                    type="text" 
-                    className="pl-10" 
-                    required 
+                  <Input
+                    id="firstName"
+                    type="text"
+                    className="pl-10"
+                    required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
                   />
@@ -83,10 +91,10 @@ const SignUp = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lastName">Last Name</Label>
-                <Input 
-                  id="lastName" 
-                  type="text" 
-                  required 
+                <Input
+                  id="lastName"
+                  type="text"
+                  required
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                 />
@@ -96,12 +104,12 @@ const SignUp = () => {
               <Label htmlFor="email">Email</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                <Input 
-                  id="email" 
-                  type="email" 
+                <Input
+                  id="email"
+                  type="email"
                   placeholder="your.email@example.com"
-                  className="pl-10" 
-                  required 
+                  className="pl-10"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -111,11 +119,11 @@ const SignUp = () => {
               <Label htmlFor="password">Password</Label>
               <div className="relative">
                 <LockKeyhole className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                <Input 
-                  id="password" 
-                  type="password" 
-                  className="pl-10" 
-                  required 
+                <Input
+                  id="password"
+                  type="password"
+                  className="pl-10"
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -125,11 +133,11 @@ const SignUp = () => {
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <div className="relative">
                 <LockKeyhole className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                <Input 
-                  id="confirmPassword" 
-                  type="password" 
-                  className="pl-10" 
-                  required 
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  className="pl-10"
+                  required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
@@ -138,22 +146,23 @@ const SignUp = () => {
                 <p className="text-sm text-red-500">{passwordError}</p>
               )}
             </div>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full bg-amber-600 hover:bg-amber-700"
               disabled={loading}
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Account...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating
+                  Account...
                 </>
               ) : (
-                'Create Account'
+                "Create Account"
               )}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-4">
+        {/* <CardFooter className="flex flex-col space-y-4">
           <div className="relative flex justify-center text-xs uppercase">
             <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
             <div className="absolute inset-0 flex items-center">
@@ -170,7 +179,7 @@ const SignUp = () => {
               Log in
             </Link>
           </div>
-        </CardFooter>
+        </CardFooter> */}
       </Card>
     </div>
   );

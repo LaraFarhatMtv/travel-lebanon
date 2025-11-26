@@ -15,6 +15,8 @@ import CustomTours from "./pages/CustomTours";
 import Accommodations from "./pages/Accommodations";
 import AccommodationDetail from "./pages/AccommodationDetail";
 import Drivers from "./pages/Drivers";
+import UserProfile from "./pages/UserProfile";
+import RestaurantDetail from "./pages/RestaurantDetail";
 import NotFound from "./pages/NotFound";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
@@ -52,6 +54,11 @@ const AppRoutes = () => (
         <Restaurants />
       </ProtectedRoute>
     } />
+    <Route path="/restaurants/detail/:id" element={
+      <ProtectedRoute>
+        <RestaurantDetail />
+      </ProtectedRoute>
+    } />
     <Route path="/activities" element={
       <ProtectedRoute>
         <Activities />
@@ -85,6 +92,11 @@ const AppRoutes = () => (
     <Route path="/drivers" element={
       <ProtectedRoute>
         <Drivers />
+      </ProtectedRoute>
+    } />
+    <Route path="/profile" element={
+      <ProtectedRoute>
+        <UserProfile />
       </ProtectedRoute>
     } />
     <Route path="*" element={<NotFound />} />
