@@ -50,12 +50,7 @@ interface ReviewDialogState {
   booking: BookingRecord | null;
 }
 
-const statusStyles: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-900",
-  confirmed: "bg-blue-100 text-blue-900",
-  completed: "bg-green-100 text-green-900",
-  cancelled: "bg-gray-200 text-gray-600",
-};
+//
 
 const bookingTypeLabels: Record<string, string> = {
   activity: "Activity",
@@ -255,8 +250,13 @@ const UserProfile = () => {
   const bookingsSorted = useMemo(
     () =>
       [...bookings].sort((a, b) => {
-        const dateA = a.start_date ? new Date(a.start_date).getTime() : 0;
-        const dateB = b.start_date ? new Date(b.start_date).getTime() : 0;
+        // Use created_at if available, otherwise fall back to id (higher id = newer)
+        const dateA = a.created_at
+          ? new Date(a.created_at).getTime()
+          : Number(a.id) || 0;
+        const dateB = b.created_at
+          ? new Date(b.created_at).getTime()
+          : Number(b.id) || 0;
         return dateB - dateA;
       }),
     [bookings]
@@ -341,21 +341,21 @@ const UserProfile = () => {
       value: bookings.length,
       icon: Route,
     },
-    {
-      label: "Upcoming",
-      value: upcomingBookings.length,
-      icon: Calendar,
-    },
-    {
-      label: "Completed",
-      value: completedBookings.length,
-      icon: CheckCircle2,
-    },
-    {
-      label: "Reviews left",
-      value: activityReviews.length + driverReviews.length,
-      icon: Star,
-    },
+    // {
+    //   label: "Upcoming",
+    //   value: upcomingBookings.length,
+    //   icon: Calendar,
+    // },
+    // {
+    //   label: "Completed",
+    //   value: completedBookings.length,
+    //   icon: CheckCircle2,
+    // },
+    // {
+    //   label: "Reviews left",
+    //   value: activityReviews.length + driverReviews.length,
+    //   icon: Star,
+    // },
   ];
 
   const loading = profileLoading || bookingsLoading;
@@ -390,7 +390,8 @@ const UserProfile = () => {
         itemId: item.id,
         booking: booking.id,
         rating: Number(activityReviewForm.rating),
-        comment: activityReviewForm.comment,
+        message: activityReviewForm.comment,
+        userID: user?.id,
       });
       toast.success("Review submitted!");
       setActivityReviewState({ open: false, booking: null });
@@ -420,7 +421,8 @@ const UserProfile = () => {
         driver: driver.id,
         booking: booking.id,
         rating: Number(driverReviewForm.rating),
-        comment: driverReviewForm.comment,
+        message: driverReviewForm.comment,
+        userID: user?.id,
       });
       toast.success("Driver review submitted!");
       setDriverReviewState({ open: false, booking: null });
@@ -508,19 +510,19 @@ const UserProfile = () => {
               <UserIcon className="h-4 w-4" />
               {profile?.location ? profile.location : "Lebanon Explorer"}
             </Badge>
-            <Badge variant="outline" className="gap-2">
+            {/* <Badge variant="outline" className="gap-2">
               <Clock className="h-4 w-4" />
               {bookings.length
                 ? `${bookings.length} trip${
                     bookings.length === 1 ? "" : "s"
                   } booked`
                 : "No trips yet"}
-            </Badge>
+            </Badge> */}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => (
           <Card
             key={stat.label}
@@ -540,176 +542,7 @@ const UserProfile = () => {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Trip history</CardTitle>
-            <p className="text-sm text-gray-500">
-              All of your activity and custom tour bookings in one place.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {bookingsSorted.length === 0 && (
-              <div className="text-center py-12 space-y-3">
-                <p className="text-gray-600">
-                  No trips yet. Book an activity or plan a custom tour to start
-                  your journey.
-                </p>
-                <div className="flex justify-center gap-3">
-                  <Button asChild>
-                    <Link to="/activities">Explore activities</Link>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link to="/custom-tours">Build a custom tour</Link>
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {bookingsSorted.map((booking) => {
-              const item = getItemFromBooking(booking);
-              const driver = getDriverFromBooking(booking);
-              const destinations = normalizeDestinations(booking.destinations);
-              const hasActivityReview = activityReviewMap.has(booking.id);
-              const hasDriverReview = driverReviewMap.has(booking.id);
-              const completed = isBookingCompleted(booking);
-              const preview = getBookingPreview(booking);
-              const typeLabel =
-                bookingTypeLabels[booking.type] ?? bookingTypeLabels.activity;
-
-              return (
-                <div
-                  key={booking.id}
-                  className="border border-gray-100 rounded-xl p-5 shadow-sm"
-                >
-                  {preview.image && (
-                    <div className="mb-4 h-40 w-full overflow-hidden rounded-lg">
-                      <img
-                        src={preview.image}
-                        alt={preview.title}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <Badge variant="secondary" className="capitalize">
-                          {typeLabel}
-                        </Badge>
-                        <Badge
-                          className={cn(
-                            "capitalize",
-                            statusStyles[booking.status] ||
-                              "bg-gray-100 text-gray-600"
-                          )}
-                        >
-                          {booking.status}
-                        </Badge>
-                      </div>
-                      <h3 className="text-lg font-semibold">{preview.title}</h3>
-                      <p className="text-sm text-gray-500">
-                        {getBookingDate(booking)}
-                      </p>
-                      {preview.subtitle && (
-                        <p className="flex items-center gap-1 text-sm text-gray-600 mt-1">
-                          <MapPin className="h-4 w-4 text-emerald-600" />
-                          {preview.subtitle}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      {booking.total_price ? (
-                        <p className="text-xl font-bold">
-                          $
-                          {Number(booking.total_price).toLocaleString(
-                            undefined,
-                            {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }
-                          )}
-                        </p>
-                      ) : null}
-                      {booking.participants && (
-                        <p className="text-sm text-gray-500">
-                          {booking.participants} participant
-                          {booking.participants === 1 ? "" : "s"}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {destinations.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      {destinations.map((destination: any, index: number) => (
-                        <Badge
-                          key={`${destination.name}-${index}`}
-                          variant="outline"
-                          className="text-xs"
-                        >
-                          <Route className="mr-1 h-3 w-3" />
-                          {destination.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  {driver && (
-                    <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                      <Car className="h-4 w-4 text-emerald-600" />
-                      Driver: {driver.name}
-                    </div>
-                  )}
-
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    {preview.detailPath && (
-                      <Button variant="outline" asChild>
-                        <Link to={preview.detailPath}>View details</Link>
-                      </Button>
-                    )}
-
-                    {booking.type === "activity" &&
-                      completed &&
-                      !hasActivityReview && (
-                        <Button onClick={() => openActivityReview(booking)}>
-                          Review experience
-                        </Button>
-                      )}
-
-                    {booking.type === "activity" && hasActivityReview && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 text-emerald-700"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        Activity reviewed
-                      </Badge>
-                    )}
-
-                    {driver && completed && !hasDriverReview && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => openDriverReview(booking)}
-                      >
-                        Review driver
-                      </Button>
-                    )}
-
-                    {driver && hasDriverReview && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 text-emerald-700"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        Driver reviewed
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+        {/* tips was here */}
 
         <Card>
           <CardHeader>
@@ -881,7 +714,7 @@ const UserProfile = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Your reviews</CardTitle>
           <p className="text-sm text-gray-500">
@@ -928,7 +761,9 @@ const UserProfile = () => {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mt-2">
-                      {review.comment || "No comment provided."}
+                      {review.message && review.message.trim()
+                        ? review.message
+                        : "No comment provided."}
                     </p>
                   </div>
                 ))}
@@ -979,7 +814,9 @@ const UserProfile = () => {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mt-2">
-                      {review.comment || "No comment provided."}
+                      {review.message && review.message.trim()
+                        ? review.message
+                        : "No comment provided."}
                     </p>
                   </div>
                 ))}
@@ -987,7 +824,7 @@ const UserProfile = () => {
             )}
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Dialog
         open={activityReviewState.open}
@@ -999,7 +836,7 @@ const UserProfile = () => {
           <DialogHeader>
             <DialogTitle>Review your experience</DialogTitle>
             <DialogDescription>
-              Reviews are tied to completed bookings so travelers can trust the
+              Reviews are tied to your bookings so travelers can trust the
               feedback.
             </DialogDescription>
           </DialogHeader>

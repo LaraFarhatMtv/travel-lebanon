@@ -57,12 +57,19 @@ export interface BookingRecord {
 export interface ActivityReview {
   id: string;
   rating: number;
-  comment?: string;
+  message?: string;
   created_at?: string;
+  userID?: {
+    id: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+  };
   user?: {
     id: string;
     first_name?: string;
     last_name?: string;
+    email?: string;
   };
   booking?: {
     id: string;
@@ -72,7 +79,7 @@ export interface ActivityReview {
 export interface DriverReview {
   id: string;
   rating: number;
-  comment?: string;
+  message?: string;
   created_at?: string;
   user?: {
     id: string;

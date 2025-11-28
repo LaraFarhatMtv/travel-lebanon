@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MapPin, Search, Phone, Clock, Utensils, Star } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { directusAPI } from "@/services/api";
+import { directusAPI, reviewAPI } from "@/services/api";
+import type { ReviewStatsMap } from "@/services/api";
 
 const DEFAULT_RESTAURANT_SUBCATEGORIES = [
   { id: 101, name: "Lebanese Classics" },
@@ -279,6 +280,7 @@ const Restaurants = () => {
   const [data, setData] = useState<any[]>([]);
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [useStaticData, setUseStaticData] = useState(!id);
+  const [reviewStats, setReviewStats] = useState<ReviewStatsMap>({});
 
   useEffect(() => {
     const getcategories = async () => {
@@ -364,6 +366,34 @@ const Restaurants = () => {
     };
     getItems();
   }, [id, subcategoryId, currentTab, data, useStaticData]);
+
+  useEffect(() => {
+    const fetchReviewStats = async () => {
+      if (useStaticData) {
+        setReviewStats({});
+        return;
+      }
+
+      const itemIds = restaurants
+        .map((restaurant) => Number(restaurant.id))
+        .filter((value) => Number.isFinite(value));
+
+      if (!itemIds.length) {
+        setReviewStats({});
+        return;
+      }
+
+      try {
+        const stats = await reviewAPI.getReviewStatsForItems(itemIds);
+        setReviewStats(stats);
+      } catch (error) {
+        console.error("Error fetching review stats:", error);
+        setReviewStats({});
+      }
+    };
+
+    fetchReviewStats();
+  }, [restaurants, useStaticData]);
 
   // Sync currentTab with subcategoryId from URL when component mounts or URL changes
   useEffect(() => {
@@ -522,8 +552,12 @@ const Restaurants = () => {
       {/* Results */}
       {filteredRestaurants.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRestaurants.map((restaurant) => (
-            <Card key={restaurant.id} className="overflow-hidden">
+          {filteredRestaurants.map((restaurant) => {
+            const ratingInfo = reviewStats[String(restaurant.id)];
+            const hasRating = typeof ratingInfo?.average === "number";
+
+            return (
+              <Card key={restaurant.id} className="overflow-hidden">
               <div className="h-48 overflow-hidden">
                 <img
                   src={
@@ -537,10 +571,24 @@ const Restaurants = () => {
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
                   <CardTitle className="text-xl">{restaurant.title}</CardTitle>
-                  <Badge variant="outline" className="flex items-center gap-1">
-                    <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                    {restaurant.rating || 4.5}
-                  </Badge>
+                  {hasRating ? (
+                    <Badge
+                      variant="outline"
+                      className="flex items-center gap-1"
+                    >
+                      <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                      {Number(ratingInfo?.average ?? 0).toFixed(1)}
+                      {ratingInfo?.count ? (
+                        <span className="text-xs text-gray-500">
+                          ({ratingInfo.count})
+                        </span>
+                      ) : null}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-gray-500">
+                      New
+                    </Badge>
+                  )}
                 </div>
                 <CardDescription className="flex items-center gap-1 text-gray-600">
                   <Utensils className="h-3.5 w-3.5" />
@@ -611,8 +659,9 @@ const Restaurants = () => {
                   </Link>
                 </Button>
               </CardFooter>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-16">

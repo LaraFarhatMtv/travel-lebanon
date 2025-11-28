@@ -331,7 +331,9 @@ const Drivers = () => {
                             </div>
                           </div>
                           <p className="text-gray-700 mt-1">
-                            {review.comment || "No comment provided."}
+                            {review.message && review.message.trim()
+                              ? review.message
+                              : "No comment provided."}
                           </p>
                         </div>
                       ))
@@ -352,12 +354,12 @@ const Drivers = () => {
                     >
                       Book Custom Tour
                     </Button>
-                    <Button
+                    {/* <Button
                       variant="default"
                       className="bg-red-600 hover:bg-red-700"
                     >
                       Request Day Rate
-                    </Button>
+                    </Button> */}
                   </div>
                 </CardFooter>
               )}

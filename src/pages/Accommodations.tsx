@@ -4,7 +4,8 @@ import HeroSection from '@/components/accommodations/HeroSection';
 import FilterSection from '@/components/accommodations/FilterSection';
 import AccommodationCard from '@/components/accommodations/AccommodationCard';
 import EmptyState from '@/components/accommodations/EmptyState';
-import { directusAPI } from '@/services/api';
+import { directusAPI, reviewAPI } from '@/services/api';
+import type { ReviewStatsMap } from '@/services/api';
 import { accommodations as STATIC_ACCOMMODATIONS } from '@/data/accommodations';
 
 const DEFAULT_ACCOMMODATION_SUBCATEGORIES = [
@@ -37,6 +38,7 @@ const Accommodations = () => {
   const [data, setData] = useState<any[]>([]);
   const [accommodations, setAccommodations] = useState<any[]>([]);
   const [useStaticData, setUseStaticData] = useState(!id);
+  const [reviewStats, setReviewStats] = useState<ReviewStatsMap>({});
   
   useEffect(() => {
     const getSubcategories = async () => {
@@ -111,6 +113,34 @@ const Accommodations = () => {
     };
     getItems();
   }, [id, subcategoryId, currentTab, data, useStaticData]);
+
+  useEffect(() => {
+    const fetchReviewStats = async () => {
+      if (useStaticData) {
+        setReviewStats({});
+        return;
+      }
+
+      const itemIds = accommodations
+        .map((accommodation) => Number(accommodation.id))
+        .filter((value) => Number.isFinite(value));
+
+      if (!itemIds.length) {
+        setReviewStats({});
+        return;
+      }
+
+      try {
+        const stats = await reviewAPI.getReviewStatsForItems(itemIds);
+        setReviewStats(stats);
+      } catch (error) {
+        console.error("Error fetching accommodation review stats:", error);
+        setReviewStats({});
+      }
+    };
+
+    fetchReviewStats();
+  }, [accommodations, useStaticData]);
 
   // Sync currentTab with subcategoryId from URL when component mounts or URL changes
   useEffect(() => {
@@ -267,16 +297,27 @@ const Accommodations = () => {
       
       {filteredAccommodations.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredAccommodations.map(accommodation => (
-            <AccommodationCard 
-              key={accommodation.id} 
-              accommodation={accommodation} 
-              linkState={{
-                accommodation,
-                source: useStaticData ? "static" : "directus",
-              }}
-            />
-          ))}
+          {filteredAccommodations.map(accommodation => {
+            const stats = reviewStats[String(accommodation.id)];
+            const accommodationWithRating = stats
+              ? {
+                  ...accommodation,
+                  rating: stats.average,
+                  reviewCount: stats.count,
+                }
+              : accommodation;
+
+            return (
+              <AccommodationCard
+                key={accommodation.id}
+                accommodation={accommodationWithRating}
+                linkState={{
+                  accommodation: accommodationWithRating,
+                  source: useStaticData ? "static" : "directus",
+                }}
+              />
+            );
+          })}
         </div>
       ) : (
         <EmptyState resetFilters={resetFilters} />

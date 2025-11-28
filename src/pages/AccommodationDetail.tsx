@@ -259,6 +259,14 @@ const AccommodationDetail = () => {
     fetchAccommodationDetails();
   }, [id, fallbackAccommodation, fallbackSource]);
 
+  const rooms = parseRooms(accommodation?.rooms);
+
+  useEffect(() => {
+    if (!roomType && rooms.length > 0) {
+      setRoomType(rooms[0].type);
+    }
+  }, [roomType, rooms]);
+
   // Loading state
   if (loading) {
     return (
@@ -300,21 +308,48 @@ const AccommodationDetail = () => {
   const basePrice = accommodation.price || accommodation.pricePerNight || 100;
   const locationLabel = accommodation.location || "Lebanon";
   const address = accommodation.address || locationLabel;
-  const rating = accommodation.rating || 4.5;
   const phone = accommodation.phone || "+961 1 234 567";
   const website = accommodation.website || "www.accommodation.com";
 
   // Parse complex data
-  const rooms = parseRooms(accommodation.rooms);
   const amenities = parseAmenities(accommodation.amenities);
   const reviews = parseReviews(accommodation.reviews);
   const images = parseImages(accommodation.images, accommodation.image);
 
-  useEffect(() => {
-    if (!roomType && rooms.length > 0) {
-      setRoomType(rooms[0].type);
-    }
-  }, [roomType, rooms]);
+  const parsedRatingsCount = reviews.length;
+  const averageFromReviews =
+    parsedRatingsCount > 0
+      ? parseFloat(
+          (
+            reviews.reduce(
+              (sum, review) => sum + (Number(review.rating) || 0),
+              0
+            ) / parsedRatingsCount
+          ).toFixed(1)
+        )
+      : null;
+
+  const recordRating =
+    typeof accommodation.rating === "number"
+      ? accommodation.rating
+      : typeof accommodation.rating === "string"
+      ? Number(accommodation.rating)
+      : null;
+  const recordReviewCount =
+    typeof (accommodation as any).reviewCount === "number"
+      ? (accommodation as any).reviewCount
+      : null;
+
+  const ratingDisplay =
+    recordReviewCount && recordReviewCount > 0 && recordRating
+      ? recordRating.toFixed
+        ? recordRating.toFixed(1)
+        : recordRating
+      : averageFromReviews;
+  const reviewCountDisplay =
+    recordReviewCount && recordReviewCount > 0
+      ? recordReviewCount
+      : parsedRatingsCount || null;
 
   // Find selected room
   const selectedRoom = rooms.find((room) => room.type === roomType) || rooms[0];
@@ -356,7 +391,7 @@ const AccommodationDetail = () => {
       const guestCount = parseInt(guests, 10) || 1;
       const stayNights = Math.max(totalNights, 1);
       await bookingAPI.createBooking({
-        status: "pending",
+        status: "completed",
         type: "accommodation",
         start_date: checkIn.toISOString(),
         participants: guestCount,
@@ -433,7 +468,18 @@ const AccommodationDetail = () => {
               <span className="text-gray-700">{locationLabel}</span>
               <div className="flex items-center gap-1 ml-4">
                 <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-                <span className="font-medium">{rating}</span>
+                {ratingDisplay ? (
+                  <span className="font-medium">
+                    {ratingDisplay}
+                    {typeof reviewCountDisplay === "number" ? (
+                      <span className="ml-1 text-sm text-gray-500">
+                        ({reviewCountDisplay})
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-500">No reviews yet</span>
+                )}
               </div>
             </div>
             <div className="text-gray-600 mb-4">{address}</div>

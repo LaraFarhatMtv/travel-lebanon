@@ -20,8 +20,10 @@ import {
   Users,
   Compass,
   Clock,
+  Star,
 } from "lucide-react";
-import { directusAPI } from "@/services/api";
+import { directusAPI, reviewAPI } from "@/services/api";
+import type { ReviewStatsMap } from "@/services/api";
 
 const DEFAULT_ACTIVITY_SUBCATEGORIES = [
   { id: 201, name: "Cultural Tours" },
@@ -140,6 +142,7 @@ const Activities = () => {
   const [data, setData] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [useStaticData, setUseStaticData] = useState(!id);
+  const [reviewStats, setReviewStats] = useState<ReviewStatsMap>({});
 
   useEffect(() => {
     const getSubcategories = async () => {
@@ -226,6 +229,34 @@ const Activities = () => {
     };
     getItems();
   }, [id, subcategoryId, currentTab, data, useStaticData]);
+
+  useEffect(() => {
+    const fetchReviewStats = async () => {
+      if (useStaticData) {
+        setReviewStats({});
+        return;
+      }
+
+      const itemIds = activities
+        .map((activity) => Number(activity.id))
+        .filter((value) => Number.isFinite(value));
+
+      if (!itemIds.length) {
+        setReviewStats({});
+        return;
+      }
+
+      try {
+        const stats = await reviewAPI.getReviewStatsForItems(itemIds);
+        setReviewStats(stats);
+      } catch (error) {
+        console.error("Error fetching activity review stats:", error);
+        setReviewStats({});
+      }
+    };
+
+    fetchReviewStats();
+  }, [activities, useStaticData]);
 
   // Sync currentTab with subcategoryId from URL when component mounts or URL changes
   useEffect(() => {
@@ -402,25 +433,44 @@ const Activities = () => {
       {/* Results */}
       {filteredActivities.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredActivities.map((activity) => (
-            <Card key={activity.id} className="overflow-hidden">
-              <div className="h-48 overflow-hidden">
-                <img
-                  src={
-                    activity.image ||
-                    "https://images.unsplash.com/photo-1551632811-561732d1e306?q=80&w=2070&auto=format&fit=crop"
-                  }
-                  alt={activity.title}
-                  className="w-full h-full object-cover transition-transform hover:scale-105 duration-500"
-                />
-              </div>
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-xl">{activity.title}</CardTitle>
-                  <div className="text-lg font-bold text-green-700">
-                    ${activity.price || 45}
-                  </div>
+          {filteredActivities.map((activity) => {
+            const ratingInfo = reviewStats[String(activity.id)];
+            const hasRating = typeof ratingInfo?.average === "number";
+
+            return (
+              <Card key={activity.id} className="overflow-hidden">
+                <div className="h-48 overflow-hidden">
+                  <img
+                    src={
+                      activity.image ||
+                      "https://images.unsplash.com/photo-1551632811-561732d1e306?q=80&w=2070&auto=format&fit=crop"
+                    }
+                    alt={activity.title}
+                    className="w-full h-full object-cover transition-transform hover:scale-105 duration-500"
+                  />
                 </div>
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-start">
+                    <CardTitle className="text-xl">{activity.title}</CardTitle>
+                    {hasRating ? (
+                      <Badge
+                        variant="outline"
+                        className="flex items-center gap-1"
+                      >
+                        <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                        {Number(ratingInfo?.average ?? 0).toFixed(1)}
+                        {ratingInfo?.count ? (
+                          <span className="text-xs text-gray-500">
+                            ({ratingInfo.count})
+                          </span>
+                        ) : null}
+                      </Badge>
+                    ) : (
+                      <div className="text-lg font-bold text-green-700">
+                        ${activity.price || 45}
+                      </div>
+                    )}
+                  </div>
                 <CardDescription className="flex items-center gap-1 text-gray-600">
                   <MapPin className="h-3.5 w-3.5" />
                   {activity.location || "Lebanon"}
@@ -467,6 +517,9 @@ const Activities = () => {
                     </Badge>
                   )}
                 </div>
+                <div className="mt-4 text-lg font-bold text-green-700">
+                  ${activity.price || 45}
+                </div>
               </CardContent>
               <CardFooter>
                 <Button
@@ -485,7 +538,8 @@ const Activities = () => {
                 </Button>
               </CardFooter>
             </Card>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-16">

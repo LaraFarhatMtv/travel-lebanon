@@ -154,6 +154,23 @@ const ActivityDetail = () => {
 
   const reviews: ActivityReview[] = reviewsResponse?.data || [];
 
+  // Debug: Log reviews to check userID field
+  useEffect(() => {
+    if (reviews.length > 0) {
+      console.log("Reviews data:", reviews);
+      reviews.forEach((review, index) => {
+        console.log(`Review ${index + 1}:`, {
+          id: review.id,
+          rating: review.rating,
+          message: review.message,
+          userID: review.userID,
+          user: review.user,
+          userName: review.userID?.first_name || review.user?.first_name,
+        });
+      });
+    }
+  }, [reviews]);
+
   const averageRating = useMemo(() => {
     if (!reviews.length) return null;
     const total = reviews.reduce(
@@ -170,17 +187,15 @@ const ActivityDetail = () => {
       const bookingItemId =
         typeof booking.item === "object" ? booking.item?.id : booking.item;
       if (bookingItemId !== activityId) return false;
-      if (booking.status === "completed") return true;
-      const bookingDate = booking.start_date
-        ? new Date(booking.start_date)
-        : null;
-      return bookingDate ? bookingDate.getTime() < Date.now() : false;
+      return booking.status !== "cancelled";
     });
   }, [bookings, id]);
 
   const userHasReviewed = useMemo(() => {
     if (!user?.id) return false;
-    return reviews.some((review) => review.user?.id === user.id);
+    return reviews.some(
+      (review) => review.userID?.id === user.id || review.user?.id === user.id
+    );
   }, [reviews, user?.id]);
 
   useEffect(() => {
@@ -211,7 +226,7 @@ const ActivityDetail = () => {
     try {
       setBookingLoading(true);
       const participantCount = parseInt(participants, 10) || 1;
-      await bookingAPI.createBooking({
+      const createdBooking = await bookingAPI.createBooking({
         status: "pending",
         type: "activity",
         start_date: date.toISOString(),
@@ -223,6 +238,15 @@ const ActivityDetail = () => {
           : undefined,
         user: user.id,
       });
+      const createdBookingId =
+        createdBooking?.data?.id ??
+        (Array.isArray(createdBooking?.data)
+          ? createdBooking?.data?.[0]?.id
+          : undefined) ??
+        createdBooking?.id;
+      if (createdBookingId) {
+        setSelectedBooking(String(createdBookingId));
+      }
       toast.success("Booking request received! We'll be in touch shortly.");
       await fetchBookings();
     } catch (err) {
@@ -235,17 +259,27 @@ const ActivityDetail = () => {
   };
 
   const handleSubmitReview = async () => {
-    if (!id || !selectedBooking) {
-      toast.error("Please pick a booking to review.");
+    if (!id) {
+      toast.error("Missing activity information.");
+      return;
+    }
+    if (!user?.id) {
+      toast.error("You must be logged in to submit a review.");
       return;
     }
     try {
-      await reviewAPI.submitActivityReview({
+      const payload: Record<string, any> = {
         itemId: Number(id),
-        booking: selectedBooking,
         rating: Number(reviewRating),
-        comment: reviewComment,
-      });
+        message: reviewComment,
+        userID: user.id,
+      };
+
+      if (selectedBooking) {
+        payload.booking = selectedBooking;
+      }
+
+      await reviewAPI.submitActivityReview(payload);
       toast.success("Thank you for sharing your experience!");
       setReviewDialogOpen(false);
       setReviewComment("");
@@ -293,7 +327,11 @@ const ActivityDetail = () => {
   const description = activity.description || "No description available";
   const price = activity.price || 45;
   const activityLocation = activity.location || "Lebanon";
-  const rating = activity.rating || 4.7;
+  const fallbackActivityRating =
+    typeof activity.rating === "number"
+      ? activity.rating.toFixed(1)
+      : activity.rating || null;
+  const displayRating = averageRating ?? fallbackActivityRating ?? null;
 
   // Parse JSON fields if needed
   let includes: string[] = [];
@@ -422,12 +460,16 @@ const ActivityDetail = () => {
               <span className="text-gray-700">{activityLocation}</span>
               <div className="flex items-center gap-1">
                 <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-                <span className="font-medium">
-                  {averageRating || rating}{" "}
-                  <span className="text-sm text-gray-500">
-                    ({reviews.length} reviews)
+                {displayRating ? (
+                  <span className="font-medium">
+                    {displayRating}
+                    <span className="text-sm text-gray-500">
+                      ({reviews.length} reviews)
+                    </span>
                   </span>
-                </span>
+                ) : (
+                  <span className="text-sm text-gray-500">No reviews yet</span>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-3 mb-4">
@@ -557,19 +599,16 @@ const ActivityDetail = () => {
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                   <div className="text-lg font-semibold">
-                    {averageRating || rating} / 5 · {reviews.length} reviews
+                    {displayRating ? `${displayRating} / 5` : "No rating yet"} ·{" "}
+                    {reviews.length} reviews
                   </div>
-                  <Button
+                  {/* <Button
                     variant="outline"
-                    disabled={
-                      !isAuthenticated ||
-                      !eligibleBookings.length ||
-                      userHasReviewed
-                    }
+                    disabled={!isAuthenticated || userHasReviewed}
                     onClick={() => setReviewDialogOpen(true)}
                   >
                     {userHasReviewed ? "Review submitted" : "Leave a review"}
-                  </Button>
+                  </Button> */}
                 </div>
               </div>
 
@@ -585,7 +624,10 @@ const ActivityDetail = () => {
                   >
                     <div className="flex justify-between mb-2">
                       <div className="font-medium">
-                        {[review.user?.first_name, review.user?.last_name]
+                        {[
+                          review.userID?.first_name || review.user?.first_name,
+                          review.userID?.last_name || review.user?.last_name,
+                        ]
                           .filter(Boolean)
                           .join(" ") || "Traveler"}
                       </div>
@@ -608,7 +650,9 @@ const ActivityDetail = () => {
                       ))}
                     </div>
                     <p className="text-gray-700">
-                      {review.comment || "Great experience!"}
+                      {review.message && review.message.trim()
+                        ? review.message
+                        : "Great experience!"}
                     </p>
                   </div>
                 ))
@@ -723,17 +767,18 @@ const ActivityDetail = () => {
           <DialogHeader>
             <DialogTitle>Share your experience</DialogTitle>
             <DialogDescription>
-              Reviews are available after you complete a booking for this
-              experience.
+              Reviews unlock as soon as you book this experience with your
+              account.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {eligibleBookings.length === 0 && (
-              <p className="text-sm text-red-500">
-                You need a completed booking before you can leave a review.
+              <p className="text-sm text-gray-600">
+                No booking reference found yet. You can still share feedback
+                now, and we'll link it once your booking is confirmed.
               </p>
             )}
-            {eligibleBookings.length > 1 && (
+            {eligibleBookings.length > 0 && (
               <div className="space-y-2">
                 <Label>Select booking</Label>
                 <Select
@@ -781,12 +826,7 @@ const ActivityDetail = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              onClick={handleSubmitReview}
-              disabled={!eligibleBookings.length || !selectedBooking}
-            >
-              Submit review
-            </Button>
+            <Button onClick={handleSubmitReview}>Submit review</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,13 @@
 import type { BookingStatus } from "@/types/directus";
 
+export type ReviewStatsMap = Record<
+  string,
+  {
+    average: number;
+    count: number;
+  }
+>;
+
 /**
  * API Service for backend communication.
  * Handles Directus authentication, content fetching, bookings and reviews.
@@ -89,6 +97,37 @@ const formatImageUrl = (asset: any) => {
   return asset;
 };
 
+const extractItemId = (entry: any) => {
+  if (!entry?.itemId) return null;
+  if (typeof entry.itemId === "object") return entry.itemId?.id ?? null;
+  return entry.itemId;
+};
+
+const buildReviewStats = (reviews: any[]): ReviewStatsMap => {
+  const totals: Record<string, { sum: number; count: number }> = {};
+
+  reviews.forEach((review) => {
+    const itemId = extractItemId(review);
+    if (!itemId) return;
+    const key = String(itemId);
+    if (!totals[key]) {
+      totals[key] = { sum: 0, count: 0 };
+    }
+    totals[key].sum += Number(review.rating) || 0;
+    totals[key].count += 1;
+  });
+
+  return Object.entries(totals).reduce((acc, [key, value]) => {
+    acc[key] = {
+      average: value.count
+        ? parseFloat((value.sum / value.count).toFixed(1))
+        : 0,
+      count: value.count,
+    };
+    return acc;
+  }, {} as ReviewStatsMap);
+};
+
 const cleanPayload = (data: Record<string, any>) =>
   Object.fromEntries(
     Object.entries(data).filter(
@@ -152,11 +191,13 @@ export const userAPI = {
 export const directusAPI = {
   getCategories: async () =>
     directusFetch("/items/Category", {
-      searchParams: { fields: "id,title", sort: "sort" },
+      auth: true,
+      searchParams: { fields: "id,title" },
     }),
 
   getsubCategories: async (id: number | string) =>
     directusFetch("/items/SubCategory", {
+      auth: true,
       searchParams: {
         "filter[categoryId][_eq]": id,
         fields: "*,categoryId.*",
@@ -171,7 +212,6 @@ export const directusAPI = {
   ) => {
     const searchParams: Record<string, any> = {
       fields: "*,subCategoryId.*,subCategoryId.categoryId.*",
-      sort: "-created_at",
     };
 
     if (itemId) {
@@ -180,7 +220,10 @@ export const directusAPI = {
       searchParams["filter[subCategoryId][_eq]"] = subcategoryId;
     }
 
-    const data = await directusFetch("/items/Items", { searchParams });
+    const data = await directusFetch("/items/Items", {
+      auth: true,
+      searchParams,
+    });
 
     if (data?.data && Array.isArray(data.data)) {
       data.data = data.data.map((item: any) => ({
@@ -200,12 +243,14 @@ export const directusAPI = {
   getTopActivities: async (limit = 6) => {
     const [itemsResponse, reviewsResponse] = await Promise.all([
       directusFetch("/items/Items", {
+        auth: true,
         searchParams: {
           fields: "*,subCategoryId.*,subCategoryId.categoryId.*",
           limit: -1,
         },
       }),
       directusFetch("/items/Review", {
+        auth: true,
         searchParams: {
           fields: "id,rating,itemId.id",
           limit: -1,
@@ -250,16 +295,17 @@ export const directusAPI = {
     try {
       const [driversResponse, reviewsResponse] = await Promise.all([
         directusFetch("/items/Drivers", {
+          auth: true,
           searchParams: {
-            fields:
-              "*,image.id,image.filename_download,languages,specialties,driver_reviews.id",
+            fields: "*,image.id,image.filename_download,driver_reviews.id",
             sort: "name",
           },
         }),
         directusFetch("/items/DriverReviews", {
+          auth: true,
           searchParams: {
             fields:
-              "id,rating,comment,driver.id,created_at,user.first_name,user.last_name",
+              "id,rating,message,driver.id,created_at,user.first_name,user.last_name",
             limit: -1,
           },
         }).catch(() => ({ data: [] })),
@@ -318,7 +364,7 @@ export const bookingAPI = {
         "filter[user][id][_eq]": userId,
         fields:
           "*,item.*,driver.*,user.id,destinations,status,type,start_date,participants",
-        sort: "-start_date",
+        sort: "-created_at",
       },
     }),
 
@@ -362,11 +408,11 @@ export const reviewAPI = {
 
   getActivityReviews: async (activityId: string | number) =>
     directusFetch("/items/Review", {
+      auth: false,
       searchParams: {
         "filter[itemId][_eq]": activityId,
         fields:
-          "id,rating,comment,created_at,user.id,user.first_name,user.last_name,booking.id",
-        sort: "-created_at",
+          "id,rating,message,user.id,user.first_name,user.last_name,user.email,userID.id,userID.first_name,userID.last_name,userID.email,booking.id",
         limit: -1,
       },
     }),
@@ -376,7 +422,7 @@ export const reviewAPI = {
       auth: true,
       searchParams: {
         "filter[user][_eq]": userId,
-        fields: "id,itemId.id,rating,comment,booking.id",
+        fields: "id,itemId.id,rating,message,created_at,booking.id",
         limit: -1,
       },
     }),
@@ -390,11 +436,11 @@ export const reviewAPI = {
 
   getDriverReviews: async (driverId: string | number) =>
     directusFetch("/items/DriverReviews", {
+      auth: false,
       searchParams: {
         "filter[driver][_eq]": driverId,
         fields:
-          "id,rating,comment,created_at,user.id,user.first_name,user.last_name,booking.id",
-        sort: "-created_at",
+          "id,rating,message,user.id,user.first_name,user.last_name,user.email,userID.id,userID.first_name,userID.last_name,userID.email,booking.id",
         limit: -1,
       },
     }),
@@ -404,10 +450,30 @@ export const reviewAPI = {
       auth: true,
       searchParams: {
         "filter[user][_eq]": userId,
-        fields: "id,driver.id,driver.name,rating,comment,booking.id",
+        fields: "id,driver.id,driver.name,rating,message,created_at,booking.id",
         limit: -1,
       },
     }),
+
+  getReviewStatsForItems: async (
+    itemIds?: (string | number)[]
+  ): Promise<ReviewStatsMap> => {
+    const searchParams: Record<string, any> = {
+      fields: "itemId,itemId.id,rating",
+      limit: -1,
+    };
+
+    if (itemIds?.length) {
+      searchParams["filter[itemId][_in]"] = itemIds.join(",");
+    }
+
+    const response = await directusFetch("/items/Review", {
+      auth: true,
+      searchParams,
+    });
+    const reviews = response?.data || [];
+    return buildReviewStats(reviews);
+  },
 };
 
 export default {

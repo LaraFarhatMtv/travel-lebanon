@@ -29,9 +29,9 @@ const Navigation = () => {
 
   const primaryLinks = [
     { label: "Home", to: "/" },
-    { label: "Restaurants", to: "/restaurants" },
-    { label: "Activities", to: "/activities" },
-    { label: "Accommodations", to: "/accommodations" },
+    { label: "Restaurants", to: "/restaurants?id=3" },
+    { label: "Activities", to: "/activities?id=4" },
+    { label: "Accommodations", to: "/accommodations?id=5" },
     { label: "Custom Tours", to: "/custom-tours" },
     { label: "Drivers", to: "/drivers" },
   ];
@@ -58,15 +58,23 @@ const Navigation = () => {
           ))}
           {data &&
             data.length > 0 &&
-            data.map((item) => (
-              <Link
-                key={`category-${item.id}`}
-                to={`/${item.title}?id=${item.id}`}
-                className="px-3 py-2 text-sm font-medium rounded-md hover:bg-amber-50"
-              >
-                {item.title}
-              </Link>
-            ))}
+            data
+              .filter(
+                (item) =>
+                  !primaryLinks.some(
+                    (link) =>
+                      link.label.toLowerCase() === item.title?.toLowerCase()
+                  )
+              )
+              .map((item) => (
+                <Link
+                  key={`category-${item.id}`}
+                  to={`/${item.title}?id=${item.id}`}
+                  className="px-3 py-2 text-sm font-medium rounded-md hover:bg-amber-50"
+                >
+                  {item.title}
+                </Link>
+              ))}
         </nav>
 
         {/* Auth Buttons or User Menu */}
@@ -75,16 +83,13 @@ const Navigation = () => {
             <div className="flex items-center gap-4">
               <Link
                 to="/profile"
-                className="text-sm font-medium text-gray-700 hover:text-amber-700 transition"
+                className="flex items-center gap-2 px-2 py-1 rounded hover:bg-amber-50 transition"
               >
-                Trips & Profile
-              </Link>
-              <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
                   <User className="h-4 w-4 text-amber-700" />
                 </div>
                 <span className="text-sm font-medium">{user?.name}</span>
-              </div>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
@@ -121,27 +126,35 @@ const Navigation = () => {
       {isMenuOpen && (
         <nav className="md:hidden bg-white border-t px-4 py-3 space-y-2">
           {primaryLinks.map((link) => (
-          <Link
+            <Link
               key={`mobile-${link.to}`}
               to={link.to}
-            className="block px-3 py-2 rounded-md text-base font-medium hover:bg-amber-50"
-            onClick={() => setIsMenuOpen(false)}
-          >
+              className="block px-3 py-2 rounded-md text-base font-medium hover:bg-amber-50"
+              onClick={() => setIsMenuOpen(false)}
+            >
               {link.label}
-          </Link>
+            </Link>
           ))}
           {data &&
             data.length > 0 &&
-            data.map((item) => (
-          <Link
-                key={`mobile-category-${item.id}`}
-                to={`/${item.title}?id=${item.id}`}
-            className="block px-3 py-2 rounded-md text-base font-medium hover:bg-amber-50"
-            onClick={() => setIsMenuOpen(false)}
-          >
-                {item.title}
-          </Link>
-            ))}
+            data
+              .filter(
+                (item) =>
+                  !primaryLinks.some(
+                    (link) =>
+                      link.label.toLowerCase() === item.title?.toLowerCase()
+                  )
+              )
+              .map((item) => (
+                <Link
+                  key={`mobile-category-${item.id}`}
+                  to={`/${item.title}?id=${item.id}`}
+                  className="block px-3 py-2 rounded-md text-base font-medium hover:bg-amber-50"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {item.title}
+                </Link>
+              ))}
           {isAuthenticated && (
             <Link
               to="/profile"

@@ -15,6 +15,7 @@ export interface Accommodation {
   pricePerNight?: number;
   price?: number;
   rating?: number;
+  reviewCount?: number;
   amenities?: string[];
   image?: string;
   description?: string;
@@ -59,6 +60,18 @@ const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodation, li
   const title = accommodation.title || accommodation.name || "Lovely Accommodation";
   const price = accommodation.price || accommodation.pricePerNight || 100;
 
+  const ratingValue =
+    typeof accommodation.rating === "number"
+      ? accommodation.rating
+      : typeof accommodation.rating === "string"
+      ? Number(accommodation.rating)
+      : null;
+  const hasRating =
+    ratingValue !== null &&
+    !Number.isNaN(ratingValue) &&
+    typeof accommodation.reviewCount === "number" &&
+    accommodation.reviewCount > 0;
+
   return (
     <Card className="overflow-hidden">
       <div className="h-48 overflow-hidden">
@@ -71,10 +84,22 @@ const AccommodationCard: React.FC<AccommodationCardProps> = ({ accommodation, li
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-xl">{title}</CardTitle>
-          <Badge variant="outline" className="flex items-center gap-1">
-            <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-            {accommodation.rating || 4.5}
-          </Badge>
+          {hasRating ? (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+              {ratingValue?.toFixed ? ratingValue.toFixed(1) : ratingValue}
+              {typeof accommodation.reviewCount === "number" &&
+                accommodation.reviewCount > 0 && (
+                  <span className="text-xs text-gray-500">
+                    ({accommodation.reviewCount})
+                  </span>
+                )}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-gray-500">
+              New
+            </Badge>
+          )}
         </div>
         <div className="flex items-center text-gray-600 text-sm">
           <MapPin className="h-3.5 w-3.5 mr-1" />
