@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +21,11 @@ import {
   Star,
   Calendar,
   ChevronDown,
+  Utensils,
+  Home,
 } from "lucide-react";
-import { directusAPI, bookingAPI } from "@/services/api";
+import { Link } from "react-router-dom";
+import { directusAPI, bookingAPI, reviewAPI } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
 import type { DriverProfile } from "@/types/directus";
 import { toast } from "sonner";
@@ -39,6 +42,11 @@ const CustomTours = () => {
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [accommodations, setAccommodations] = useState<any[]>([]);
+  const [reviewStats, setReviewStats] = useState<
+    Record<string, { average: number; count: number }>
+  >({});
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
@@ -60,6 +68,7 @@ const CustomTours = () => {
         const mappedDestinations = activitiesOnly.map((activity: any) => ({
           id: activity.id,
           name: activity.title || "Untitled Activity",
+          title: activity.title || "Untitled Activity", // Add title field
           region:
             activity.location ||
             activity.subCategoryId?.categoryId?.title ||
@@ -70,10 +79,93 @@ const CustomTours = () => {
           estimatedTime: activity.duration || "Variable",
           rating: activity.rating || 0,
           reviewCount: activity.reviewCount || 0,
+          type: "activity", // Add type field
+          itemId: activity.id, // Add itemId field
         }));
 
         setAllDestinations(mappedDestinations);
         setPopularDestinations(mappedDestinations.slice(0, 6));
+
+        // Fetch restaurants (category 3)
+        const restaurantsSubcategories = await directusAPI.getsubCategories(3);
+        const restaurantSubcategoryIds =
+          restaurantsSubcategories?.data?.map((sub: any) => sub.id) || [];
+        const restaurantPromises = restaurantSubcategoryIds.map(
+          (subId: number) =>
+            directusAPI
+              .getItems(subId, null)
+              .then((res) => res.data || [])
+              .catch(() => [])
+        );
+        const allRestaurants = (await Promise.all(restaurantPromises)).flat();
+
+        // Fetch accommodations (category 5)
+        const accommodationsSubcategories = await directusAPI.getsubCategories(
+          5
+        );
+        const accommodationSubcategoryIds =
+          accommodationsSubcategories?.data?.map((sub: any) => sub.id) || [];
+        const accommodationPromises = accommodationSubcategoryIds.map(
+          (subId: number) =>
+            directusAPI
+              .getItems(subId, null)
+              .then((res) => res.data || [])
+              .catch(() => [])
+        );
+        const allAccommodations = (
+          await Promise.all(accommodationPromises)
+        ).flat();
+
+        // Fetch review stats for restaurants and accommodations
+        const itemIds = [
+          ...allRestaurants.map((r: any) => r.id),
+          ...allAccommodations.map((a: any) => a.id),
+        ];
+        const stats = await reviewAPI.getReviewStatsForItems(itemIds);
+        setReviewStats(stats);
+
+        // Add review stats to restaurants and accommodations
+        const restaurantsWithStats = allRestaurants.map((restaurant: any) => {
+          const itemStats = stats[restaurant.id] || {
+            average: restaurant.rating || 0,
+            count: restaurant.reviewCount || 0,
+          };
+          return {
+            ...restaurant,
+            rating: itemStats.average,
+            reviewCount: itemStats.count,
+          };
+        });
+
+        const accommodationsWithStats = allAccommodations.map(
+          (accommodation: any) => {
+            const itemStats = stats[accommodation.id] || {
+              average: accommodation.rating || 0,
+              count: accommodation.reviewCount || 0,
+            };
+            return {
+              ...accommodation,
+              rating: itemStats.average,
+              reviewCount: itemStats.count,
+            };
+          }
+        );
+
+        // Sort by reviews (rating * reviewCount for better sorting)
+        restaurantsWithStats.sort((a: any, b: any) => {
+          const scoreA = (a.rating || 0) * (a.reviewCount || 0);
+          const scoreB = (b.rating || 0) * (b.reviewCount || 0);
+          return scoreB - scoreA;
+        });
+
+        accommodationsWithStats.sort((a: any, b: any) => {
+          const scoreA = (a.rating || 0) * (a.reviewCount || 0);
+          const scoreB = (b.rating || 0) * (b.reviewCount || 0);
+          return scoreB - scoreA;
+        });
+
+        setRestaurants(restaurantsWithStats);
+        setAccommodations(accommodationsWithStats);
 
         const driversList = await directusAPI.getDrivers();
         setDrivers(driversList || []);
@@ -91,6 +183,38 @@ const CustomTours = () => {
     if (!selectedDestinations.some((item) => item.id === destination.id)) {
       setSelectedDestinations([...selectedDestinations, destination]);
     }
+  };
+
+  const handleAddRestaurant = (restaurant: any) => {
+    const destination = {
+      id: restaurant.id,
+      name: restaurant.title || restaurant.name,
+      title: restaurant.title || restaurant.name, // Add title field
+      region: restaurant.location || "Lebanon",
+      image:
+        restaurant.image ||
+        "https://images.unsplash.com/photo-1555993539-1732b0258235?q=80&w=1200&auto=format&fit=crop",
+      estimatedTime: "Variable",
+      type: "restaurant",
+      itemId: restaurant.id,
+    };
+    handleAddDestination(destination);
+  };
+
+  const handleAddAccommodation = (accommodation: any) => {
+    const destination = {
+      id: accommodation.id,
+      name: accommodation.title || accommodation.name,
+      title: accommodation.title || accommodation.name, // Add title field
+      region: accommodation.location || "Lebanon",
+      image:
+        accommodation.image ||
+        "https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop",
+      estimatedTime: "Variable",
+      type: "accommodation",
+      itemId: accommodation.id,
+    };
+    handleAddDestination(destination);
   };
 
   const handleShowMoreDestinations = () => {
@@ -138,11 +262,19 @@ const CustomTours = () => {
         type: "custom",
         start_date: new Date(date).toISOString(),
         participants: selectedDestinations.length,
-        destinations: selectedDestinations.map((dest) => ({
-          id: dest.id,
-          name: dest.name,
-          region: dest.region,
-        })),
+        destinations: selectedDestinations.map((dest) => {
+          // Ensure itemId is set correctly - use itemId if available, otherwise use id if it's a number
+          const itemId =
+            dest.itemId || (typeof dest.id === "number" ? dest.id : null);
+          return {
+            id: dest.id,
+            name: dest.name,
+            title: dest.title || dest.name, // Add title field
+            region: dest.region,
+            type: dest.type || "activity",
+            itemId: itemId, // Always include itemId (will be null for custom locations)
+          };
+        }),
         driver: selectedDriverId,
         notes,
         user: user.id,
@@ -153,7 +285,8 @@ const CustomTours = () => {
       setNotes("");
       setSelectedDriverId(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to submit request";
+      const message =
+        err instanceof Error ? err.message : "Failed to submit request";
       toast.error(message);
     } finally {
       setSubmitting(false);
@@ -168,6 +301,45 @@ const CustomTours = () => {
     }
     return acc;
   }, 0);
+
+  // Get selected destination locations for "Near you" filtering
+  const selectedLocations = selectedDestinations.map((dest) =>
+    (dest.region || "").toLowerCase().trim()
+  );
+
+  // Filter and sort restaurants - show "near you" first
+  const sortedRestaurants = useMemo(() => {
+    const nearYou = restaurants.filter((r: any) => {
+      const location = (r.location || "").toLowerCase().trim();
+      return selectedLocations.some(
+        (selected) => location.includes(selected) || selected.includes(location)
+      );
+    });
+    const others = restaurants.filter((r: any) => {
+      const location = (r.location || "").toLowerCase().trim();
+      return !selectedLocations.some(
+        (selected) => location.includes(selected) || selected.includes(location)
+      );
+    });
+    return [...nearYou, ...others];
+  }, [restaurants, selectedLocations]);
+
+  // Filter and sort accommodations - show "near you" first
+  const sortedAccommodations = useMemo(() => {
+    const nearYou = accommodations.filter((a: any) => {
+      const location = (a.location || "").toLowerCase().trim();
+      return selectedLocations.some(
+        (selected) => location.includes(selected) || selected.includes(location)
+      );
+    });
+    const others = accommodations.filter((a: any) => {
+      const location = (a.location || "").toLowerCase().trim();
+      return !selectedLocations.some(
+        (selected) => location.includes(selected) || selected.includes(location)
+      );
+    });
+    return [...nearYou, ...others];
+  }, [accommodations, selectedLocations]);
 
   if (loading) {
     return (
@@ -232,7 +404,27 @@ const CustomTours = () => {
                         />
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium">{dest.name}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{dest.name}</div>
+                          {dest.type === "restaurant" && (
+                            <Badge
+                              variant="secondary"
+                              className="text-xs bg-amber-100 text-amber-700"
+                            >
+                              <Utensils className="h-3 w-3 mr-1" />
+                              Restaurant
+                            </Badge>
+                          )}
+                          {dest.type === "accommodation" && (
+                            <Badge
+                              variant="secondary"
+                              className="text-xs bg-blue-100 text-blue-700"
+                            >
+                              <Home className="h-3 w-3 mr-1" />
+                              Accommodation
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-sm text-gray-500 flex items-center gap-1">
                           <MapPin className="h-3.5 w-3.5" />
                           {dest.region} • ~{dest.estimatedTime}
@@ -249,7 +441,7 @@ const CustomTours = () => {
                     </div>
                   ))}
 
-                  <div className="bg-purple-50 p-4 rounded-lg">
+                  {/* <div className="bg-purple-50 p-4 rounded-lg">
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium">
@@ -262,7 +454,7 @@ const CustomTours = () => {
                         {selectedDestinations.length}
                       </div>
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               )}
 
@@ -361,6 +553,239 @@ const CustomTours = () => {
                 </div>
               )}
             </div>
+
+            {/* Restaurants Section */}
+            <div className="mt-12">
+              <div className="flex items-center gap-2 mb-4">
+                <Utensils className="h-5 w-5 text-amber-600" />
+                <h3 className="text-lg font-semibold">Popular Restaurants</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {sortedRestaurants.slice(0, 6).map((restaurant: any) => {
+                  const isNearYou = selectedLocations.some((selected) => {
+                    const location = (restaurant.location || "")
+                      .toLowerCase()
+                      .trim();
+                    return (
+                      location.includes(selected) || selected.includes(location)
+                    );
+                  });
+
+                  const isSelected = selectedDestinations.some(
+                    (d) => d.id === restaurant.id
+                  );
+
+                  return (
+                    <div
+                      key={restaurant.id}
+                      className={`relative group cursor-pointer rounded-lg overflow-hidden h-44 border transition ${
+                        isSelected
+                          ? "ring-2 ring-amber-500 border-amber-500"
+                          : "border-gray-200 hover:border-amber-400"
+                      }`}
+                      onClick={() => handleAddRestaurant(restaurant)}
+                    >
+                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition z-10"></div>
+                      <img
+                        src={
+                          restaurant.image ||
+                          "https://images.unsplash.com/photo-1555993539-1732b0258235?q=80&w=1200&auto=format&fit=crop"
+                        }
+                        alt={restaurant.title || restaurant.name}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500"
+                      />
+                      {isNearYou && (
+                        <div className="absolute top-2 left-2 z-20">
+                          <Badge className="bg-amber-500 text-white">
+                            Near you
+                          </Badge>
+                        </div>
+                      )}
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 z-20 bg-amber-500 rounded-full p-1">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4 text-white"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-20">
+                        <div className="font-bold">
+                          {restaurant.title || restaurant.name}
+                        </div>
+                        <div className="text-sm flex items-center justify-between">
+                          <div className="flex items-center">
+                            <MapPin className="h-3.5 w-3.5 mr-1" />
+                            {restaurant.location || "Lebanon"}
+                          </div>
+                          {restaurant.rating > 0 && (
+                            <div className="flex items-center">
+                              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 mr-1" />
+                              <span className="text-xs">
+                                {restaurant.rating.toFixed(1)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {restaurant.reviewCount > 0 && !isSelected && (
+                        <div className="absolute top-2 right-2 z-20 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 text-xs text-white flex items-center gap-1">
+                          <span>{restaurant.reviewCount}</span>
+                          <span>reviews</span>
+                        </div>
+                      )}
+                      <div className="absolute bottom-2 right-2 z-20">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/restaurants/detail/${restaurant.id}`, {
+                              state: { restaurant, source: "custom-tours" },
+                            });
+                          }}
+                        >
+                          View
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {sortedRestaurants.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  No restaurants available
+                </p>
+              )}
+            </div>
+
+            {/* Accommodations Section */}
+            <div className="mt-12">
+              <div className="flex items-center gap-2 mb-4">
+                <Home className="h-5 w-5 text-blue-600" />
+                <h3 className="text-lg font-semibold">
+                  Popular Accommodations
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {sortedAccommodations.slice(0, 6).map((accommodation: any) => {
+                  const isNearYou = selectedLocations.some((selected) => {
+                    const location = (accommodation.location || "")
+                      .toLowerCase()
+                      .trim();
+                    return (
+                      location.includes(selected) || selected.includes(location)
+                    );
+                  });
+
+                  const isSelected = selectedDestinations.some(
+                    (d) => d.id === accommodation.id
+                  );
+
+                  return (
+                    <div
+                      key={accommodation.id}
+                      className={`relative group cursor-pointer rounded-lg overflow-hidden h-44 border transition ${
+                        isSelected
+                          ? "ring-2 ring-blue-500 border-blue-500"
+                          : "border-gray-200 hover:border-blue-400"
+                      }`}
+                      onClick={() => handleAddAccommodation(accommodation)}
+                    >
+                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition z-10"></div>
+                      <img
+                        src={
+                          accommodation.image ||
+                          "https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop"
+                        }
+                        alt={accommodation.title || accommodation.name}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500"
+                      />
+                      {isNearYou && (
+                        <div className="absolute top-2 left-2 z-20">
+                          <Badge className="bg-blue-500 text-white">
+                            Near you
+                          </Badge>
+                        </div>
+                      )}
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 z-20 bg-blue-500 rounded-full p-1">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4 text-white"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 p-3 text-white z-20">
+                        <div className="font-bold">
+                          {accommodation.title || accommodation.name}
+                        </div>
+                        <div className="text-sm flex items-center justify-between">
+                          <div className="flex items-center">
+                            <MapPin className="h-3.5 w-3.5 mr-1" />
+                            {accommodation.location || "Lebanon"}
+                          </div>
+                          {accommodation.rating > 0 && (
+                            <div className="flex items-center">
+                              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 mr-1" />
+                              <span className="text-xs">
+                                {accommodation.rating.toFixed(1)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {accommodation.reviewCount > 0 && !isSelected && (
+                        <div className="absolute top-2 right-2 z-20 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 text-xs text-white flex items-center gap-1">
+                          <span>{accommodation.reviewCount}</span>
+                          <span>reviews</span>
+                        </div>
+                      )}
+                      <div className="absolute bottom-2 right-2 z-20">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/accommodations/${accommodation.id}`, {
+                              state: {
+                                accommodation,
+                                source: "custom-tours",
+                              },
+                            });
+                          }}
+                        >
+                          View
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {sortedAccommodations.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  No accommodations available
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -420,7 +845,9 @@ const CustomTours = () => {
                             <div className="flex items-center gap-3 text-sm text-gray-600">
                               <div className="flex items-center">
                                 <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 mr-1" />
-                                {driver.rating ? driver.rating.toFixed(1) : "New"}
+                                {driver.rating
+                                  ? driver.rating.toFixed(1)
+                                  : "New"}
                               </div>
                               <div className="flex items-center">
                                 <Car className="h-3.5 w-3.5 mr-1" />

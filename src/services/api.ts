@@ -91,11 +91,19 @@ const directusFetch = async (
   return payload;
 };
 
-const formatImageUrl = (asset: any) => {
+export const formatImageUrl = (asset: any) => {
   if (!asset) return null;
-  if (typeof asset === "string") return `${ASSETS_URL}${asset}`;
-  if (typeof asset === "object" && asset.id) return `${ASSETS_URL}${asset.id}`;
-  return asset;
+  const token = getToken(); // Get the current token for authenticated requests
+  let url = "";
+  if (typeof asset === "string") url = `${ASSETS_URL}${asset}`;
+  else if (typeof asset === "object" && asset.id)
+    url = `${ASSETS_URL}${asset.id}`;
+  else return asset; // Return original asset if not a string or object with id
+
+  if (token) {
+    return `${url}?access_token=${token}`;
+  }
+  return url;
 };
 
 const extractItemId = (entry: any) => {

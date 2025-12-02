@@ -37,7 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { bookingAPI, reviewAPI, userAPI } from "@/services/api";
+import { bookingAPI, reviewAPI, userAPI, formatImageUrl } from "@/services/api";
 import type {
   ActivityReview,
   BookingRecord,
@@ -48,6 +48,7 @@ import { autoCompletePastBookings } from "@/utils/bookings";
 interface ReviewDialogState {
   open: boolean;
   booking: BookingRecord | null;
+  item?: any; // Item information for custom tour destinations
 }
 
 //
@@ -73,11 +74,14 @@ const bookingPreviewImages: Record<string, string> = {
 };
 
 const getDetailPathForBooking = (
-  booking: BookingRecord,
-  itemId?: number | string | null
+  booking: BookingRecord | { type: string },
+  itemId?: number | string | null,
+  itemType?: string
 ) => {
   if (!itemId) return null;
-  switch (booking.type) {
+  // Use itemType if provided (for custom tour destinations), otherwise use booking.type
+  const type = itemType || booking.type;
+  switch (type) {
     case "activity":
       return `/activities/detail/${itemId}`;
     case "restaurant":
@@ -306,7 +310,7 @@ const UserProfile = () => {
 
   const visitedPlaces = useMemo(() => {
     const map = new Map<
-      number,
+      string | number,
       {
         item: any;
         booking: BookingRecord;
@@ -314,10 +318,97 @@ const UserProfile = () => {
     >();
 
     bookings.forEach((booking) => {
+      // Add places from regular bookings (activities, restaurants, accommodations)
       const item = getItemFromBooking(booking);
-      if (!item?.id) return;
-      if (!map.has(item.id)) {
-        map.set(item.id, { item, booking });
+      if (item?.id) {
+        const key = item.id;
+        if (!map.has(key)) {
+          map.set(key, { item, booking });
+        }
+      }
+
+      // Add destinations from completed custom tours
+      if (booking.type === "custom" && isBookingCompleted(booking)) {
+        const destinations = normalizeDestinations(booking.destinations);
+        destinations.forEach((dest: any) => {
+          const destName = dest.name || dest;
+          const destLocation = dest.region || "Lebanon";
+          const destType = dest.type || "activity";
+          const destItemId = dest.itemId || dest.id;
+
+          // If it's a restaurant or accommodation with an itemId, use the itemId as key
+          // Otherwise create a synthetic item
+          if (
+            (destType === "restaurant" || destType === "accommodation") &&
+            destItemId &&
+            typeof destItemId === "number"
+          ) {
+            // Use the itemId as key - this will match with regular bookings
+            const key = destItemId;
+            if (!map.has(key)) {
+              // Create item object for restaurant/accommodation
+              const destinationItem = {
+                id: destItemId,
+                title: dest.title || destName,
+                name: destName,
+                location: destLocation,
+                type: destType,
+                image:
+                  formatImageUrl(dest.image) ||
+                  (destType === "restaurant"
+                    ? "https://images.unsplash.com/photo-1555993539-1732b0258235?q=80&w=1200&auto=format&fit=crop"
+                    : "https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop"),
+              };
+              map.set(key, { item: destinationItem, booking });
+            }
+          } else {
+            // For activities or custom destinations without itemId
+            // First check if the destination has an itemId (for activities from custom tours)
+            if (destItemId && typeof destItemId === "number") {
+              // Activity with valid itemId - use the numeric ID
+              const key = destItemId;
+              if (!map.has(key)) {
+                const destinationItem = {
+                  id: destItemId,
+                  title: dest.title || destName,
+                  name: destName,
+                  location: destLocation,
+                  type: destType || "activity",
+                  image:
+                    formatImageUrl(dest.image) ||
+                    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop",
+                };
+                map.set(key, { item: destinationItem, booking });
+              }
+            } else {
+              // Custom destination without itemId - create synthetic item (no reviews allowed)
+              // Check if a place with the same name already exists
+              const existingKey = Array.from(map.keys()).find((key) => {
+                const existing = map.get(key);
+                if (!existing) return false;
+                const existingName = existing.item.title || existing.item.name;
+                const existingLocation = existing.item.location;
+                return (
+                  existingName?.toLowerCase() === destName.toLowerCase() &&
+                  existingLocation?.toLowerCase() === destLocation.toLowerCase()
+                );
+              });
+
+              if (!existingKey) {
+                const destinationItem = {
+                  id: `custom-${booking.id}-${destName}`,
+                  title: destName,
+                  location: destLocation,
+                  image:
+                    formatImageUrl(dest.image) ||
+                    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop",
+                };
+                const uniqueKey = `custom-${booking.id}-${destName}-${destLocation}`;
+                map.set(uniqueKey, { item: destinationItem, booking });
+              }
+            }
+          }
+        });
       }
     });
 
@@ -360,12 +451,12 @@ const UserProfile = () => {
 
   const loading = profileLoading || bookingsLoading;
 
-  const openActivityReview = (booking: BookingRecord) => {
+  const openActivityReview = (booking: BookingRecord, item?: any) => {
     setActivityReviewForm({
       rating: "5",
       comment: "",
     });
-    setActivityReviewState({ open: true, booking });
+    setActivityReviewState({ open: true, booking, item });
   };
 
   const openDriverReview = (booking: BookingRecord) => {
@@ -379,15 +470,58 @@ const UserProfile = () => {
   const handleSubmitActivityReview = async () => {
     if (!activityReviewState.booking) return;
     const booking = activityReviewState.booking;
-    const item = getItemFromBooking(booking);
-    if (!item?.id) {
-      toast.error("Missing activity information for this booking.");
+
+    // Try to get item from dialog state first (for custom tour destinations)
+    // Otherwise try to get from booking.item
+    let item = activityReviewState.item || getItemFromBooking(booking);
+    let itemId: number | null = null;
+
+    // For custom tours, try to extract itemId from destinations
+    if (booking.type === "custom") {
+      const destinations = normalizeDestinations(booking.destinations);
+      // Find the destination that matches the item we're trying to review
+      if (activityReviewState.item) {
+        const matchingDest = destinations.find((dest: any) => {
+          const destItemId = dest.itemId || dest.id;
+          const destName = dest.name || dest;
+          // Match by itemId if item.id is a number, otherwise match by name
+          if (typeof activityReviewState.item.id === "number") {
+            return destItemId === activityReviewState.item.id;
+          }
+          return (
+            destName === activityReviewState.item.title ||
+            destName === activityReviewState.item.name
+          );
+        });
+        if (matchingDest) {
+          const destItemId = matchingDest.itemId || matchingDest.id;
+          // Only use if it's a number
+          if (typeof destItemId === "number") {
+            itemId = destItemId;
+            item = {
+              id: destItemId,
+              title: matchingDest.title || matchingDest.name,
+              name: matchingDest.name,
+            };
+          }
+        }
+      }
+    } else {
+      // For regular bookings, use item.id if it's a number
+      if (item?.id && typeof item.id === "number") {
+        itemId = item.id;
+      }
+    }
+
+    // Validate that we have a numeric itemId
+    if (!itemId || typeof itemId !== "number") {
+      toast.error("Cannot review this item. Missing valid item information.");
       return;
     }
 
     try {
       await reviewAPI.submitActivityReview({
-        itemId: item.id,
+        itemId: itemId,
         booking: booking.id,
         rating: Number(activityReviewForm.rating),
         message: activityReviewForm.comment,
@@ -398,7 +532,7 @@ const UserProfile = () => {
       setActivityReviewForm({ rating: "5", comment: "" });
       await refetchActivityReviews();
       queryClient.invalidateQueries({
-        queryKey: ["activity-reviews", String(item.id)],
+        queryKey: ["activity-reviews", String(itemId)],
       });
     } catch (error) {
       const message =
@@ -541,6 +675,141 @@ const UserProfile = () => {
         ))}
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Your trips</CardTitle>
+          <p className="text-sm text-gray-500">
+            All your custom tour bookings, including pending and completed
+            trips.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {bookings.filter((booking) => booking.type === "custom").length ===
+          0 ? (
+            <div className="text-center py-6">
+              <p className="text-sm text-gray-500 mb-4">
+                You haven't booked any custom tours yet.
+              </p>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/custom-tours">Plan a custom tour</Link>
+              </Button>
+            </div>
+          ) : (
+            bookings
+              .filter((booking) => booking.type === "custom")
+              .sort((a, b) => {
+                // Sort by start_date (newest first), then by created_at
+                const dateA = a.start_date
+                  ? new Date(a.start_date).getTime()
+                  : a.created_at
+                  ? new Date(a.created_at).getTime()
+                  : 0;
+                const dateB = b.start_date
+                  ? new Date(b.start_date).getTime()
+                  : b.created_at
+                  ? new Date(b.created_at).getTime()
+                  : 0;
+                return dateB - dateA;
+              })
+              .map((booking) => {
+                const destinations = normalizeDestinations(
+                  booking.destinations
+                );
+                const completed = isBookingCompleted(booking);
+                const driver = getDriverFromBooking(booking);
+                const status = booking.status || "pending";
+                const isPastDate = booking.start_date
+                  ? new Date(booking.start_date).getTime() < Date.now()
+                  : false;
+                const displayStatus =
+                  completed || isPastDate ? "completed" : status;
+
+                return (
+                  <div
+                    key={booking.id}
+                    className="border border-gray-100 rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-semibold">Custom Tour</h4>
+                          <Badge
+                            variant={
+                              displayStatus === "completed"
+                                ? "default"
+                                : displayStatus === "confirmed"
+                                ? "secondary"
+                                : displayStatus === "cancelled"
+                                ? "destructive"
+                                : "outline"
+                            }
+                            className={
+                              displayStatus === "pending"
+                                ? "border-amber-300 text-amber-700 bg-amber-50"
+                                : displayStatus === "completed"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : ""
+                            }
+                          >
+                            {displayStatus === "pending" ? "Pending" : ""}
+                            {displayStatus === "confirmed" ? "Confirmed" : ""}
+                            {displayStatus === "completed" ? "Completed" : ""}
+                            {displayStatus === "cancelled" ? "Cancelled" : ""}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-500 mb-2">
+                          {getBookingDate(booking)}
+                        </p>
+                        {destinations.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-sm font-medium text-gray-700 mb-1">
+                              Destinations:
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {destinations
+                                .slice(0, 3)
+                                .map((dest: any, idx: number) => (
+                                  <Badge
+                                    key={idx}
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
+                                    {dest.name || dest}
+                                  </Badge>
+                                ))}
+                              {destinations.length > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{destinations.length - 3} more
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {driver && (
+                          <p className="text-sm text-gray-600">
+                            Driver: {driver.name}
+                          </p>
+                        )}
+                        {booking.participants && (
+                          <p className="text-sm text-gray-600">
+                            {booking.participants} participant
+                            {booking.participants !== 1 ? "s" : ""}
+                          </p>
+                        )}
+                        {booking.notes && (
+                          <p className="text-sm text-gray-600 mt-2 italic">
+                            "{booking.notes}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         {/* tips was here */}
 
@@ -651,13 +920,64 @@ const UserProfile = () => {
               {visitedPlaces.map(({ item, booking }) => {
                 const hasReview = activityReviewMap.has(booking.id);
                 const completed = isBookingCompleted(booking);
-                const detailPath = getDetailPathForBooking(booking, item.id);
+
+                // Determine the type and itemId
+                let itemType: string | undefined = item.type;
+                let itemIdForPath: number | string | undefined = item.id;
+
+                // For custom tour destinations, extract itemId and type from destinations
+                if (booking.type === "custom") {
+                  const destinations = normalizeDestinations(
+                    booking.destinations
+                  );
+                  const matchingDest = destinations.find((dest: any) => {
+                    const destItemId = dest.itemId || dest.id;
+                    const destName = dest.name || dest;
+                    // Match by itemId first, then by name
+                    if (typeof item.id === "number" && destItemId === item.id) {
+                      return true;
+                    }
+                    return destName === item.title || destName === item.name;
+                  });
+                  if (matchingDest) {
+                    const destItemId = matchingDest.itemId || matchingDest.id;
+                    // Only use numeric itemIds - don't set itemIdForPath to strings
+                    if (typeof destItemId === "number") {
+                      itemIdForPath = destItemId;
+                    }
+                    // itemIdForPath stays as item.id if destItemId is not a number
+                    if (matchingDest.type) {
+                      itemType = matchingDest.type;
+                    }
+                  }
+                }
+
+                // For regular bookings, use booking.type as fallback if item.type is not set
+                if (!itemType && booking.type !== "custom") {
+                  itemType = booking.type;
+                }
+
+                // Check if this is a custom location (manually added by user)
+                const isCustomLocation =
+                  item.location === "Custom Location" ||
+                  item.region === "Custom Location";
+
+                // Only show detail path if we have a numeric itemId and a valid type, and it's not a custom location
+                const detailPath =
+                  !isCustomLocation &&
+                  itemType &&
+                  typeof itemIdForPath === "number"
+                    ? getDetailPathForBooking(booking, itemIdForPath, itemType)
+                    : null;
+
                 const buttonLabel =
-                  booking.type === "restaurant"
+                  itemType === "restaurant"
                     ? "View restaurant"
-                    : booking.type === "accommodation"
+                    : itemType === "accommodation"
                     ? "View accommodation"
-                    : "View activity";
+                    : itemType === "activity"
+                    ? "View activity"
+                    : null;
 
                 return (
                   <div
@@ -667,10 +987,10 @@ const UserProfile = () => {
                     <div className="h-40 bg-gray-100">
                       <img
                         src={
-                          item.image ||
+                          formatImageUrl(item.image) ||
                           "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop"
                         }
-                        alt={item.title}
+                        alt={item.title || item.name}
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -679,7 +999,9 @@ const UserProfile = () => {
                         <p className="text-sm text-gray-500">
                           {getBookingDate(booking)}
                         </p>
-                        <h3 className="font-semibold">{item.title}</h3>
+                        <h3 className="font-semibold">
+                          {item.title || item.name}
+                        </h3>
                         {item.location && (
                           <p className="text-sm text-gray-600">
                             {item.location}
@@ -687,14 +1009,14 @@ const UserProfile = () => {
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {detailPath && (
+                        {detailPath && buttonLabel && (
                           <Button variant="outline" size="sm" asChild>
                             <Link
                               to={detailPath}
                               state={{
-                                [booking.type === "restaurant"
+                                [itemType === "restaurant"
                                   ? "restaurant"
-                                  : booking.type === "accommodation"
+                                  : itemType === "accommodation"
                                   ? "accommodation"
                                   : "activity"]: item,
                                 source: "profile",
@@ -704,14 +1026,18 @@ const UserProfile = () => {
                             </Link>
                           </Button>
                         )}
-                        {completed && !hasReview && (
-                          <Button
-                            size="sm"
-                            onClick={() => openActivityReview(booking)}
-                          >
-                            Review
-                          </Button>
-                        )}
+                        {completed &&
+                          !hasReview &&
+                          !isCustomLocation &&
+                          itemIdForPath &&
+                          typeof itemIdForPath === "number" && (
+                            <Button
+                              size="sm"
+                              onClick={() => openActivityReview(booking, item)}
+                            >
+                              Review
+                            </Button>
+                          )}
                         {hasReview && (
                           <Badge
                             variant="outline"
