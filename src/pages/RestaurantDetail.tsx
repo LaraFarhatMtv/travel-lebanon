@@ -209,16 +209,16 @@ const RestaurantDetail = () => {
     restaurant?.openHours || restaurant?.hours || "Daily 12:00 PM - 11:00 PM";
   const getReviewerLabel = (review: ActivityReview) => {
     const reviewUser = review.user || review.userID;
+    const firstName = review.user?.first_name || review.userID?.first_name;
+    const lastName = review.user?.last_name || review.userID?.last_name;
+    const name = [firstName, lastName].filter(Boolean).join(" ");
+    if (name) {
+      return name;
+    }
     if (reviewUser?.email) {
       return reviewUser.email.split("@")[0];
     }
-    const name = [
-      review.user?.first_name || review.userID?.first_name,
-      review.user?.last_name || review.userID?.last_name,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return name || "Traveler";
+    return "Traveler";
   };
   const eligibleBookings = useMemo(() => {
     if (!bookings.length || !id) return [];

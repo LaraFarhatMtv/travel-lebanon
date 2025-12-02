@@ -16,7 +16,8 @@ export type ReviewStatsMap = Record<
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_DIRECTUS_URL ?? "http://localhost:8055";
+  (import.meta as any).env?.VITE_DIRECTUS_URL ??
+  "https://laradirectus.swapitcoin.com";
 const ASSETS_URL = `${API_BASE_URL}/assets/`;
 
 const getToken = () => localStorage.getItem("authToken");

@@ -651,6 +651,14 @@ const UserProfile = () => {
               {visitedPlaces.map(({ item, booking }) => {
                 const hasReview = activityReviewMap.has(booking.id);
                 const completed = isBookingCompleted(booking);
+                const detailPath = getDetailPathForBooking(booking, item.id);
+                const buttonLabel =
+                  booking.type === "restaurant"
+                    ? "View restaurant"
+                    : booking.type === "accommodation"
+                    ? "View accommodation"
+                    : "View activity";
+
                 return (
                   <div
                     key={item.id}
@@ -679,14 +687,23 @@ const UserProfile = () => {
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link
-                            to={`/activities/detail/${item.id}`}
-                            state={{ activity: item, source: "profile" }}
-                          >
-                            View activity
-                          </Link>
-                        </Button>
+                        {detailPath && (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link
+                              to={detailPath}
+                              state={{
+                                [booking.type === "restaurant"
+                                  ? "restaurant"
+                                  : booking.type === "accommodation"
+                                  ? "accommodation"
+                                  : "activity"]: item,
+                                source: "profile",
+                              }}
+                            >
+                              {buttonLabel}
+                            </Link>
+                          </Button>
+                        )}
                         {completed && !hasReview && (
                           <Button
                             size="sm"
